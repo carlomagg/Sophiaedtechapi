@@ -1,9 +1,10 @@
 import os
+from datetime import timedelta
 from flask import Flask, request, jsonify
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash
 from werkzeug.security import generate_password_hash, check_password_hash
-from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
+from flask_jwt_extended import JWTManager, create_access_token, create_refresh_token, jwt_required, get_jwt_identity
 from functools import wraps
 from flask_sqlalchemy import SQLAlchemy 
 import datetime
@@ -23,6 +24,8 @@ UPLOAD_FOLDER = 'uploads/user_posts'
 app.config['USER_POST_UPLOAD_FOLDER'] = UPLOAD_FOLDER
 os.makedirs(app.config['USER_POST_UPLOAD_FOLDER'], exist_ok=True)
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(hours=1)
+app.config['JWT_REFRESH_TOKEN_EXPIRES'] = timedelta(days=30)
 jwt = JWTManager(app)
 
 
@@ -433,6 +436,9 @@ def register():
 
 
 # Login endpoint
+from flask_jwt_extended import create_access_token, create_refresh_token, jwt_required, get_jwt_identity
+from datetime import timedelta
+
 @app.route('/login', methods=['POST'])
 def login():
     try:
@@ -450,12 +456,27 @@ def login():
         return jsonify({'message': 'Email and password are required'}), 400
 
     user = User.query.filter_by(email=email).first()
-
     if not user or not check_password_hash(user.password, password):
         return jsonify({'message': 'Invalid credentials'}), 401
 
-    access_token = create_access_token(identity={'email': user.email})
-    return jsonify({'access_token': access_token}), 200
+    # Create access token with longer expiration (e.g., 1 hour)
+    access_token = create_access_token(identity=user.email, expires_delta=timedelta(hours=1))
+    
+    # Create a refresh token
+    refresh_token = create_refresh_token(identity=user.email)
+
+    return jsonify({
+        'access_token': access_token,
+        'refresh_token': refresh_token
+    }), 200
+
+# Add a refresh token route
+@app.route('/refresh', methods=['POST'])
+@jwt_required(refresh=True)
+def refresh():
+    current_user = get_jwt_identity()
+    new_access_token = create_access_token(identity=current_user, expires_delta=timedelta(hours=1))
+    return jsonify({'access_token': new_access_token}), 200
 
 # Profile starts here
 @app.route('/profile', methods=['GET', 'PUT'])
