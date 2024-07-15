@@ -167,17 +167,10 @@ enrollment_table = db.Table('enrollment',
  
 # Course endpoints
 @app.route('/courses', methods=['POST'])
+@jwt_required()
 def create_course():
-    token = request.headers.get('Authorization')
-    if not token:
-        return jsonify({'error': 'Token is missing'}), 401
-
-    try:
-        data = jwt.decode(token.split()[1], app.config['SECRET_KEY'], algorithms=['HS256'])
-        author_id = data['user_id']
-    except:
-        return jsonify({'error': 'Invalid token'}), 401
-
+    author_id = get_jwt_identity()
+    
     data = request.get_json()
     title = data.get('title')
     image = data.get('image')
@@ -230,20 +223,94 @@ def get_course(course_id):
 
 # Update a course
 @app.route('/courses/<int:course_id>', methods=['PUT'])
+@jwt_required()
 def update_course(course_id):
-
-
-# Delete a course
- @app.route('/courses/<int:course_id>', methods=['DELETE'])
- def delete_course(course_id):
+    user_id = get_jwt_identity()
+    
     course = Course.query.get(course_id)
     if not course:
         return jsonify({'error': 'Course not found'}), 404
+    
+    # Check if the current user is the author of the course
+    if course.author_id != user_id:
+        return jsonify({'error': 'Unauthorized to update this course'}), 403
 
-    db.session.delete(course)
-    db.session.commit()
+    data = request.get_json()
 
-    return jsonify({'message': 'Course deleted successfully'}), 200
+    # Update basic course information
+    course.title = data.get('title', course.title)
+    course.image = data.get('image', course.image)
+    course.content = data.get('content', course.content)
+    course.video = data.get('video', course.video)
+
+    # Update categories
+    if 'categories' in data:
+        # Remove all existing categories
+        course.categories = []
+        # Add new categories
+        for category_name in data['categories']:
+            category = CourseCategory.query.filter_by(name=category_name).first()
+            if not category:
+                category = CourseCategory(name=category_name)
+            course.categories.append(category)
+
+    # Update modules
+    if 'modules' in data:
+        # Remove all existing modules
+        for module in course.modules:
+            db.session.delete(module)
+        course.modules = []
+        # Add new modules
+        for module_data in data['modules']:
+            module = Module(
+                name=module_data.get('name'),
+                content=module_data.get('content'),
+                order=module_data.get('order')
+            )
+            course.modules.append(module)
+
+    try:
+        db.session.commit()
+        return jsonify({'message': 'Course updated successfully'}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': f'Failed to update course: {str(e)}'}), 500
+
+
+# Delete a course
+    @app.route('/courses/<int:course_id>', methods=['DELETE'])
+    @jwt_required()
+    def delete_course(course_id):
+     user_id = get_jwt_identity()
+    
+    course = Course.query.get(course_id)
+    if not course:
+        return jsonify({'error': 'Course not found'}), 404
+    
+    # Check if the current user is the author of the course
+    if course.author_id != user_id:
+        return jsonify({'error': 'Unauthorized to delete this course'}), 403
+
+    try:
+        # Remove all enrollments for this course
+        for enrollment in course.enrollments:
+            db.session.delete(enrollment)
+        
+        # Remove all modules associated with this course
+        for module in course.modules:
+            db.session.delete(module)
+        
+        # Remove all category associations
+        course.categories = []
+        
+        # Delete the course
+        db.session.delete(course)
+        db.session.commit()
+        
+        return jsonify({'message': 'Course deleted successfully'}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': f'Failed to delete course: {str(e)}'}), 500
  
   
   # Create a new category
@@ -298,6 +365,7 @@ def delete_category(category_id):
 
 # Create a new module
 @app.route('/modules', methods=['POST'])
+@jwt_required()
 def create_module():
     data = request.get_json()
     name = data.get('name')
@@ -321,6 +389,7 @@ def get_modules():
 
 # Update a module
 @app.route('/modules/<int:module_id>', methods=['PUT'])
+@jwt_required()
 def update_module(module_id):
     module = Module.query.get(module_id)
     if not module:
@@ -338,6 +407,7 @@ def update_module(module_id):
 
 # Delete a module
 @app.route('/modules/<int:module_id>', methods=['DELETE'])
+@jwt_required()
 def delete_module(module_id):
     module = Module.query.get(module_id)
     if not module:
@@ -351,16 +421,9 @@ def delete_module(module_id):
 
     # Enroll in a course
 @app.route('/courses/<int:course_id>/enroll', methods=['POST'])
+@jwt_required()
 def enroll_in_course(course_id):
-    token = request.headers.get('Authorization')
-    if not token:
-        return jsonify({'error': 'Token is missing'}), 401
-
-    try:
-        data = jwt.decode(token.split()[1], app.config['SECRET_KEY'], algorithms=['HS256'])
-        user_id = data['user_id']
-    except:
-        return jsonify({'error': 'Invalid token'}), 401
+    user_id = get_jwt_identity()
 
     course = Course.query.get(course_id)
     if not course:
@@ -370,7 +433,7 @@ def enroll_in_course(course_id):
     if not user:
         return jsonify({'error': 'User not found'}), 404
 
-    # Add the course to the user's enrolled courses (you might need to create a new table or relationship for this)
+    # Add the course to the user's enrolled courses
     user.enrolled_courses.append(course)
     db.session.commit()
 
@@ -383,6 +446,7 @@ app.config['COURSE_VIDEO_UPLOAD_FOLDER'] = COURSE_VIDEO_UPLOAD_FOLDER
 
 # Route to handle course video uploads
 @app.route('/upload_course_video/<int:course_id>', methods=['POST'])
+@jwt_required()
 def upload_course_video(course_id):
     course = Course.query.get(course_id)
     if not course:
@@ -480,19 +544,13 @@ def refresh():
 
 # Profile starts here
 @app.route('/profile', methods=['GET', 'PUT'])
+@jwt_required()
 def profile():
-    token = request.headers.get('Authorization')
-    if not token:
-        return jsonify({'error': 'Token is missing'}), 401
-
-    try:
-        data = jwt.decode(token.split()[1], app.config['SECRET_KEY'], algorithms=['HS256'])
-        user_id = data['user_id']
-    except:
-        return jsonify({'error': 'Invalid token'}), 401
-
-    user = User.query.get(user_id)
+    user_email = get_jwt_identity()
+    print(f"Extracted user_email: {user_email}")  # Debug statement
+    user = User.query.filter_by(email=user_email).first()
     if not user:
+        print(f"User not found for email: {user_email}")  # Debug statement
         return jsonify({'error': 'User not found'}), 404
 
     if request.method == 'GET':
@@ -566,16 +624,16 @@ def profile():
                     education.school = edu_data.get('school', education.school)
                     education.degree = edu_data.get('degree', education.degree)
                     education.field_of_study = edu_data.get('field_of_study', education.field_of_study)
-                    education.start_date = datetime.datetime.fromisoformat(edu_data.get('start_date')) if edu_data.get('start_date') else None
-                    education.end_date = datetime.datetime.fromisoformat(edu_data.get('end_date')) if edu_data.get('end_date') else None
+                    education.start_date = datetime.fromisoformat(edu_data.get('start_date')) if edu_data.get('start_date') else None
+                    education.end_date = datetime.fromisoformat(edu_data.get('end_date')) if edu_data.get('end_date') else None
             else:
                 education = Education(
                     user_id=user.id,
                     school=edu_data.get('school'),
                     degree=edu_data.get('degree'),
                     field_of_study=edu_data.get('field_of_study'),
-                    start_date=datetime.datetime.fromisoformat(edu_data.get('start_date')) if edu_data.get('start_date') else None,
-                    end_date=datetime.datetime.fromisoformat(edu_data.get('end_date')) if edu_data.get('end_date') else None
+                    start_date=datetime.fromisoformat(edu_data.get('start_date')) if edu_data.get('start_date') else None,
+                    end_date=datetime.fromisoformat(edu_data.get('end_date')) if edu_data.get('end_date') else None
                 )
                 user.education.append(education)
 
@@ -589,16 +647,16 @@ def profile():
                     work.company = work_data.get('company', work.company)
                     work.role_title = work_data.get('role_title', work.role_title)
                     work.job_description = work_data.get('job_description', work.job_description)
-                    work.start_date = datetime.datetime.fromisoformat(work_data.get('start_date')) if work_data.get('start_date') else None
-                    work.end_date = datetime.datetime.fromisoformat(work_data.get('end_date')) if work_data.get('end_date') else None
+                    work.start_date = datetime.fromisoformat(work_data.get('start_date')) if work_data.get('start_date') else None
+                    work.end_date = datetime.fromisoformat(work_data.get('end_date')) if work_data.get('end_date') else None
             else:
                 work = WorkExperience(
                     user_id=user.id,
                     company=work_data.get('company'),
                     role_title=work_data.get('role_title'),
                     job_description=work_data.get('job_description'),
-                    start_date=datetime.datetime.fromisoformat(work_data.get('start_date')) if work_data.get('start_date') else None,
-                    end_date=datetime.datetime.fromisoformat(work_data.get('end_date')) if work_data.get('end_date') else None
+                    start_date=datetime.fromisoformat(work_data.get('start_date')) if work_data.get('start_date') else None,
+                    end_date=datetime.fromisoformat(work_data.get('end_date')) if work_data.get('end_date') else None
                 )
                 user.work_experience.append(work)
 
@@ -611,8 +669,8 @@ def profile():
                 if license:
                     license.name = license_data.get('name', license.name)
                     license.issuing_organization = license_data.get('issuing_organization', license.issuing_organization)
-                    license.issue_date = datetime.datetime.fromisoformat(license_data.get('issue_date')) if license_data.get('issue_date') else None
-                    license.expiration_date = datetime.datetime.fromisoformat(license_data.get('expiration_date')) if license_data.get('expiration_date') else None
+                    license.issue_date = datetime.fromisoformat(license_data.get('issue_date')) if license_data.get('issue_date') else None
+                    license.expiration_date = datetime.fromisoformat(license_data.get('expiration_date')) if license_data.get('expiration_date') else None
                     license.credentials_id = license_data.get('credentials_id', license.credentials_id)
                     license.credential_url = license_data.get('credential_url', license.credential_url)
             else:
@@ -620,8 +678,8 @@ def profile():
                     user_id=user.id,
                     name=license_data.get('name'),
                     issuing_organization=license_data.get('issuing_organization'),
-                    issue_date=datetime.datetime.fromisoformat(license_data.get('issue_date')) if license_data.get('issue_date') else None,
-                    expiration_date=datetime.datetime.fromisoformat(license_data.get('expiration_date')) if license_data.get('expiration_date') else None,
+                    issue_date=datetime.fromisoformat(license_data.get('issue_date')) if license_data.get('issue_date') else None,
+                    expiration_date=datetime.fromisoformat(license_data.get('expiration_date')) if license_data.get('expiration_date') else None,
                     credentials_id=license_data.get('credentials_id'),
                     credential_url=license_data.get('credential_url')
                 )
@@ -629,6 +687,68 @@ def profile():
 
         db.session.commit()
         return jsonify({'message': 'Profile updated successfully'}), 200
+
+@app.route('/users', methods=['GET'])
+@jwt_required()
+def get_all_users():
+    users = User.query.all()
+    users_data = [
+        {
+            'id': user.id,
+            'full_name': user.full_name,
+            'email': user.email,
+            'bio': user.bio,
+            'profile_image': user.profile_image,
+            'location': {
+                'country_region': user.location.country_region if user.location else None,
+                'city': user.location.city if user.location else None
+            },
+            'education': [
+                {
+                    'id': education.id,
+                    'school': education.school,
+                    'degree': education.degree,
+                    'field_of_study': education.field_of_study,
+                    'start_date': education.start_date.isoformat() if education.start_date else None,
+                    'end_date': education.end_date.isoformat() if education.end_date else None
+                } for education in user.education
+            ],
+            'work_experience': [
+                {
+                    'id': work.id,
+                    'company': work.company,
+                    'role_title': work.role_title,
+                    'job_description': work.job_description,
+                    'start_date': work.start_date.isoformat() if work.start_date else None,
+                    'end_date': work.end_date.isoformat() if work.end_date else None
+                } for work in user.work_experience
+            ],
+            'licenses_certifications': [
+                {
+                    'id': license.id,
+                    'name': license.name,
+                    'issuing_organization': license.issuing_organization,
+                    'issue_date': license.issue_date.isoformat() if license.issue_date else None,
+                    'expiration_date': license.expiration_date.isoformat() if license.expiration_date else None,
+                    'credentials_id': license.credentials_id,
+                    'credential_url': license.credential_url
+                } for license in user.licenses_certifications
+            ]
+        } for user in users
+    ]
+    return jsonify(users_data), 200
+
+@app.route('/user/<int:user_id>', methods=['DELETE'])
+@jwt_required()
+def delete_user(user_id):
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({'error': 'User not found'}), 404
+    
+    db.session.delete(user)
+    db.session.commit()
+    return jsonify({'message': 'User deleted successfully'}), 200
+
 
 # Profile code ends here
 
@@ -683,16 +803,9 @@ class Blog(db.Model):
 
 # Create a new blog post
 @app.route('/blogs', methods=['POST'])
+@jwt_required()
 def create_blog():
-    token = request.headers.get('Authorization')
-    if not token:
-        return jsonify({'error': 'Token is missing'}), 401
-
-    try:
-        data = jwt.decode(token.split()[1], app.config['SECRET_KEY'], algorithms=['HS256'])
-        author_id = data['user_id']
-    except:
-        return jsonify({'error': 'Invalid token'}), 401
+    author_id = get_jwt_identity()
 
     data = request.get_json()
     title = data.get('title')
@@ -745,16 +858,9 @@ def get_blog(blog_id):
 
 # Update a blog post
 @app.route('/blogs/<int:blog_id>', methods=['PUT'])
+@jwt_required()
 def update_blog(blog_id):
-    token = request.headers.get('Authorization')
-    if not token:
-        return jsonify({'error': 'Token is missing'}), 401
-
-    try:
-        data = jwt.decode(token.split()[1], app.config['SECRET_KEY'], algorithms=['HS256'])
-        user_id = data['user_id']
-    except:
-        return jsonify({'error': 'Invalid token'}), 401
+    user_id = get_jwt_identity()
 
     blog = Blog.query.get(blog_id)
     if not blog:
@@ -775,16 +881,9 @@ def update_blog(blog_id):
 
 # Delete a blog post
 @app.route('/blogs/<int:blog_id>', methods=['DELETE'])
+@jwt_required()
 def delete_blog(blog_id):
-    token = request.headers.get('Authorization')
-    if not token:
-        return jsonify({'error': 'Token is missing'}), 401
-
-    try:
-        data = jwt.decode(token.split()[1], app.config['SECRET_KEY'], algorithms=['HS256'])
-        user_id = data['user_id']
-    except:
-        return jsonify({'error': 'Invalid token'}), 401
+    user_id = get_jwt_identity()
 
     blog = Blog.query.get(blog_id)
     if not blog:
@@ -814,16 +913,9 @@ class Message(db.Model):
 
 # Send a message
 @app.route('/messages', methods=['POST'])
+@jwt_required()
 def send_message():
-    token = request.headers.get('Authorization')
-    if not token:
-        return jsonify({'error': 'Token is missing'}), 401
-
-    try:
-        data = jwt.decode(token.split()[1], app.config['SECRET_KEY'], algorithms=['HS256'])
-        sender_id = data['user_id']
-    except:
-        return jsonify({'error': 'Invalid token'}), 401
+    sender_id = get_jwt_identity()
 
     data = request.get_json()
     recipient_id = data.get('recipient_id')
@@ -844,16 +936,9 @@ def send_message():
 
 # Get messages between two users
 @app.route('/messages/<int:other_user_id>', methods=['GET'])
+@jwt_required()
 def get_messages(other_user_id):
-    token = request.headers.get('Authorization')
-    if not token:
-        return jsonify({'error': 'Token is missing'}), 401
-
-    try:
-        data = jwt.decode(token.split()[1], app.config['SECRET_KEY'], algorithms=['HS256'])
-        user_id = data['user_id']
-    except:
-        return jsonify({'error': 'Invalid token'}), 401
+    user_id = get_jwt_identity()
 
     messages = Message.query.filter(
         ((Message.sender_id == user_id) & (Message.recipient_id == other_user_id)) |
@@ -872,17 +957,12 @@ def get_messages(other_user_id):
     return jsonify(messages_data), 200
 
 # Get all messages for a user
-@app.route('/messages', methods=['GET'])
-def get_all_messages():
-    token = request.headers.get('Authorization')
-    if not token:
-        return jsonify({'error': 'Token is missing'}), 401
+from flask_jwt_extended import jwt_required, get_jwt_identity
 
-    try:
-        data = jwt.decode(token.split()[1], app.config['SECRET_KEY'], algorithms=['HS256'])
-        user_id = data['user_id']
-    except:
-        return jsonify({'error': 'Invalid token'}), 401
+@app.route('/messages', methods=['GET'])
+@jwt_required()
+def get_all_messages():
+    user_id = get_jwt_identity()
 
     sent_messages = Message.query.filter_by(sender_id=user_id).all()
     received_messages = Message.query.filter_by(recipient_id=user_id).all()
@@ -907,16 +987,9 @@ def get_all_messages():
 
 # Mark a message as read
 @app.route('/messages/<int:message_id>/read', methods=['PUT'])
+@jwt_required()
 def mark_message_as_read(message_id):
-    token = request.headers.get('Authorization')
-    if not token:
-        return jsonify({'error': 'Token is missing'}), 401
-
-    try:
-        data = jwt.decode(token.split()[1], app.config['SECRET_KEY'], algorithms=['HS256'])
-        user_id = data['user_id']
-    except:
-        return jsonify({'error': 'Invalid token'}), 401
+    user_id = get_jwt_identity()
 
     message = Message.query.get(message_id)
     if not message:
@@ -952,16 +1025,9 @@ class PeerReview(db.Model):
 
 # Upload a document for peer review
 @app.route('/peer-review/upload', methods=['POST'])
+@jwt_required()
 def upload_peer_review():
-    token = request.headers.get('Authorization')
-    if not token:
-        return jsonify({'error': 'Token is missing'}), 401
-
-    try:
-        data = jwt.decode(token.split()[1], app.config['SECRET_KEY'], algorithms=['HS256'])
-        submitter_id = data['user_id']
-    except:
-        return jsonify({'error': 'Invalid token'}), 401
+    submitter_id = get_jwt_identity()
 
     if 'file' not in request.files:
         return jsonify({'error': 'No file part'}), 400
@@ -991,16 +1057,9 @@ def upload_peer_review():
 
 # Get documents available for review in a course
 @app.route('/peer-review/available/<int:course_id>', methods=['GET'])
+@jwt_required()
 def get_available_reviews(course_id):
-    token = request.headers.get('Authorization')
-    if not token:
-        return jsonify({'error': 'Token is missing'}), 401
-
-    try:
-        data = jwt.decode(token.split()[1], app.config['SECRET_KEY'], algorithms=['HS256'])
-        user_id = data['user_id']
-    except:
-        return jsonify({'error': 'Invalid token'}), 401
+    user_id = get_jwt_identity()
 
     available_reviews = PeerReview.query.filter_by(
         course_id=course_id,
@@ -1018,16 +1077,8 @@ def get_available_reviews(course_id):
 
 # Download a document for review
 @app.route('/peer-review/download/<int:review_id>', methods=['GET'])
+@jwt_required()
 def download_review_document(review_id):
-    token = request.headers.get('Authorization')
-    if not token:
-        return jsonify({'error': 'Token is missing'}), 401
-
-    try:
-        jwt.decode(token.split()[1], app.config['SECRET_KEY'], algorithms=['HS256'])
-    except:
-        return jsonify({'error': 'Invalid token'}), 401
-
     review = PeerReview.query.get(review_id)
     if not review:
         return jsonify({'error': 'Review not found'}), 404
@@ -1036,16 +1087,9 @@ def download_review_document(review_id):
 
 # Submit a review
 @app.route('/peer-review/submit/<int:review_id>', methods=['POST'])
+@jwt_required()
 def submit_review(review_id):
-    token = request.headers.get('Authorization')
-    if not token:
-        return jsonify({'error': 'Token is missing'}), 401
-
-    try:
-        data = jwt.decode(token.split()[1], app.config['SECRET_KEY'], algorithms=['HS256'])
-        reviewer_id = data['user_id']
-    except:
-        return jsonify({'error': 'Invalid token'}), 401
+    reviewer_id = get_jwt_identity()
 
     review = PeerReview.query.get(review_id)
     if not review:
@@ -1069,16 +1113,9 @@ def submit_review(review_id):
 
 # Get reviews for a user's submitted documents
 @app.route('/peer-review/my-submissions', methods=['GET'])
+@jwt_required()
 def get_my_submissions():
-    token = request.headers.get('Authorization')
-    if not token:
-        return jsonify({'error': 'Token is missing'}), 401
-
-    try:
-        data = jwt.decode(token.split()[1], app.config['SECRET_KEY'], algorithms=['HS256'])
-        user_id = data['user_id']
-    except:
-        return jsonify({'error': 'Invalid token'}), 401
+    user_id = get_jwt_identity()
 
     submissions = PeerReview.query.filter_by(submitter_id=user_id).all()
 
@@ -1148,40 +1185,28 @@ def admin_login():
 
     admin = Admin.query.filter_by(username=username).first()
 
-    if not admin or admin.password != password:
+    if not admin or not check_password_hash(admin.password, password):
         return jsonify({'error': 'Invalid credentials'}), 401
 
-    token = jwt.encode({
-        'admin_id': admin.id,
-        'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=24)
-    }, app.config['SECRET_KEY'])
-
-    return jsonify({'token': token}), 200
+    access_token = create_access_token(identity=admin.id, additional_claims={'is_admin': True})
+    return jsonify({'access_token': access_token}), 200
 
 # Admin middleware
-def admin_required(f):
-    @wraps(f)
-    def decorated(*args, **kwargs):
-        token = request.headers.get('Authorization')
-        if not token:
-            return jsonify({'error': 'Admin token is missing'}), 401
-
-        try:
-            data = jwt.decode(token.split()[1], app.config['SECRET_KEY'], algorithms=['HS256'])
-            admin_id = data['admin_id']
-            admin = Admin.query.get(admin_id)
-            if not admin:
-                raise ValueError('Admin not found')
-        except:
-            return jsonify({'error': 'Invalid admin token'}), 401
-
-        return f(*args, **kwargs)
-
-    return decorated
+def admin_required():
+    def wrapper(fn):
+        @wraps(fn)
+        @jwt_required()
+        def decorator(*args, **kwargs):
+            claims = get_jwt_identity()
+            if not claims.get('is_admin', False):
+                return jsonify({'error': 'Admin privileges required'}), 403
+            return fn(*args, **kwargs)
+        return decorator
+    return wrapper
 
 # Create role
 @app.route('/admin/roles', methods=['POST'])
-@admin_required
+@admin_required()
 def create_role():
     data = request.get_json()
     name = data.get('name')
@@ -1200,7 +1225,7 @@ def create_role():
 
 # Delete role
 @app.route('/admin/roles/<int:role_id>', methods=['DELETE'])
-@admin_required
+@admin_required()
 def delete_role(role_id):
     role = Role.query.get(role_id)
     if not role:
@@ -1213,7 +1238,7 @@ def delete_role(role_id):
 
 # Create instructor
 @app.route('/admin/instructors', methods=['POST'])
-@admin_required
+@admin_required()
 def create_instructor():
     data = request.get_json()
     full_name = data.get('full_name')
@@ -1238,7 +1263,7 @@ def create_instructor():
 
 # Get all instructors
 @app.route('/admin/instructors', methods=['GET'])
-@admin_required
+@admin_required()
 def get_instructors():
     instructors = Instructor.query.all()
     instructors_data = [{
@@ -1253,7 +1278,7 @@ def get_instructors():
 
 # Delete instructor
 @app.route('/admin/instructors/<int:instructor_id>', methods=['DELETE'])
-@admin_required
+@admin_required()
 def delete_instructor(instructor_id):
     instructor = Instructor.query.get(instructor_id)
     if not instructor:
@@ -1276,19 +1301,15 @@ def instructor_login():
 
     instructor = Instructor.query.filter_by(email=email).first()
 
-    if not instructor or instructor.password != password:
+    if not instructor or not check_password_hash(instructor.password, password):
         return jsonify({'error': 'Invalid credentials'}), 401
 
-    token = jwt.encode({
-        'instructor_id': instructor.id,
-        'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=24)
-    }, app.config['SECRET_KEY'])
+    access_token = create_access_token(identity=instructor.id, additional_claims={'is_instructor': True})
+    return jsonify({'access_token': access_token}), 200
 
-    return jsonify({'token': token}), 200
-
-    # Assign role to user
+# Assign role to user
 @app.route('/admin/assign-role', methods=['POST'])
-@admin_required
+@admin_required()
 def assign_role():
     data = request.get_json()
     user_id = data.get('user_id')
@@ -1315,7 +1336,7 @@ def assign_role():
 
 # Remove role from user
 @app.route('/admin/remove-role', methods=['POST'])
-@admin_required
+@admin_required()
 def remove_role():
     data = request.get_json()
     user_id = data.get('user_id')
@@ -1342,7 +1363,7 @@ def remove_role():
 
 # Get user roles
 @app.route('/admin/user-roles/<int:user_id>', methods=['GET'])
-@admin_required
+@admin_required()
 def get_user_roles(user_id):
     user = User.query.get(user_id)
     if not user:
@@ -1353,7 +1374,7 @@ def get_user_roles(user_id):
 
 # Get all users with their roles
 @app.route('/admin/users-with-roles', methods=['GET'])
-@admin_required
+@admin_required()
 def get_users_with_roles():
     users = User.query.all()
     users_data = [{
@@ -1384,17 +1405,15 @@ class UserPost(db.Model):
 # Make sure to create a directory for storing uploaded documents
 
 
-@app.route('/user/posts', methods=['POST'])
-def create_user_post():
-    token = request.headers.get('Authorization')
-    if not token:
-        return jsonify({'error': 'Token is missing'}), 401
+from flask import request, jsonify
+from flask_jwt_extended import jwt_required, get_jwt_identity
+from werkzeug.utils import secure_filename
+import os
 
-    try:
-        data = jwt.decode(token.split()[1], app.config['SECRET_KEY'], algorithms=['HS256'])
-        user_id = data['user_id']
-    except:
-        return jsonify({'error': 'Invalid token'}), 401
+@app.route('/user/posts', methods=['POST'])
+@jwt_required()
+def create_user_post():
+    user_id = get_jwt_identity()
 
     title = request.form.get('title')
     executive_summary = request.form.get('executive_summary')
@@ -1405,7 +1424,6 @@ def create_user_post():
     if not title or not executive_summary or not subject:
         return jsonify({'error': 'Title, executive summary, and subject are required'}), 400
 
-    # Check if the subject matches a course title
     if not Course.query.filter_by(title=subject).first():
         return jsonify({'error': 'Invalid subject. Must match a course title.'}), 400
 
@@ -1433,16 +1451,9 @@ def create_user_post():
     return jsonify({'message': 'Post created successfully', 'post_id': post.id}), 201
 
 @app.route('/user/posts', methods=['GET'])
+@jwt_required()
 def get_user_posts():
-    token = request.headers.get('Authorization')
-    if not token:
-        return jsonify({'error': 'Token is missing'}), 401
-
-    try:
-        data = jwt.decode(token.split()[1], app.config['SECRET_KEY'], algorithms=['HS256'])
-        user_id = data['user_id']
-    except:
-        return jsonify({'error': 'Invalid token'}), 401
+    user_id = get_jwt_identity()
 
     posts = UserPost.query.filter_by(user_id=user_id).order_by(UserPost.created_at.desc()).all()
 
@@ -1460,6 +1471,7 @@ def get_user_posts():
     return jsonify(posts_data), 200
 
 @app.route('/user/posts/<int:post_id>', methods=['GET'])
+@jwt_required()
 def get_user_post(post_id):
     post = UserPost.query.get(post_id)
     if not post:
@@ -1482,28 +1494,16 @@ def get_user_post(post_id):
 
     return jsonify(post_data), 200
 
-
-#follow
-# This is the original get_courses function
-
-
-# This is the renamed function for the follow feature
 @app.route('/courses_for_follow', methods=['GET'])
+@jwt_required()
 def get_courses_for_follow():
     courses = Course.query.all()
     return jsonify([{'id': c.id, 'title': c.title} for c in courses]), 200
 
 @app.route('/follow_course/<int:course_id>', methods=['POST'])
+@jwt_required()
 def follow_course(course_id):
-    token = request.headers.get('Authorization')
-    if not token:
-        return jsonify({'error': 'Token is missing'}), 401
-
-    try:
-        data = jwt.decode(token.split()[1], app.config['SECRET_KEY'], algorithms=['HS256'])
-        user_id = data['user_id']
-    except:
-        return jsonify({'error': 'Invalid token'}), 401
+    user_id = get_jwt_identity()
 
     user = User.query.get(user_id)
     course = Course.query.get(course_id)
@@ -1520,16 +1520,9 @@ def follow_course(course_id):
     return jsonify({'message': 'Course followed successfully'}), 200
 
 @app.route('/unfollow_course/<int:course_id>', methods=['POST'])
+@jwt_required()
 def unfollow_course(course_id):
-    token = request.headers.get('Authorization')
-    if not token:
-        return jsonify({'error': 'Token is missing'}), 401
-
-    try:
-        data = jwt.decode(token.split()[1], app.config['SECRET_KEY'], algorithms=['HS256'])
-        user_id = data['user_id']
-    except:
-        return jsonify({'error': 'Invalid token'}), 401
+    user_id = get_jwt_identity()
 
     user = User.query.get(user_id)
     course = Course.query.get(course_id)
@@ -1545,17 +1538,11 @@ def unfollow_course(course_id):
 
     return jsonify({'message': 'Course unfollowed successfully'}), 200
 
-@app.route('/user/followed_posts', methods=['GET'])
-def get_followed_posts():
-    token = request.headers.get('Authorization')
-    if not token:
-        return jsonify({'error': 'Token is missing'}), 401
 
-    try:
-        data = jwt.decode(token.split()[1], app.config['SECRET_KEY'], algorithms=['HS256'])
-        user_id = data['user_id']
-    except:
-        return jsonify({'error': 'Invalid token'}), 401
+@app.route('/user/followed_posts', methods=['GET'])
+@jwt_required()
+def get_followed_posts():
+    user_id = get_jwt_identity()
 
     user = User.query.get(user_id)
     followed_courses = user.followed_courses
@@ -1582,16 +1569,9 @@ def get_followed_posts():
     #Notification
     # Create a notification
 @app.route('/notifications', methods=['POST'])
+@jwt_required()
 def create_notification():
-    token = request.headers.get('Authorization')
-    if not token:
-        return jsonify({'error': 'Token is missing'}), 401
-
-    try:
-        data = jwt.decode(token.split()[1], app.config['SECRET_KEY'], algorithms=['HS256'])
-        user_id = data['user_id']
-    except:
-        return jsonify({'error': 'Invalid token'}), 401
+    user_id = get_jwt_identity()
 
     content = request.json.get('content')
     if not content:
@@ -1603,18 +1583,10 @@ def create_notification():
 
     return jsonify({'message': 'Notification created successfully', 'id': notification.id}), 201
 
-# Get all notifications for a user
 @app.route('/notifications', methods=['GET'])
+@jwt_required()
 def get_notifications():
-    token = request.headers.get('Authorization')
-    if not token:
-        return jsonify({'error': 'Token is missing'}), 401
-
-    try:
-        data = jwt.decode(token.split()[1], app.config['SECRET_KEY'], algorithms=['HS256'])
-        user_id = data['user_id']
-    except:
-        return jsonify({'error': 'Invalid token'}), 401
+    user_id = get_jwt_identity()
 
     notifications = Notification.query.filter_by(user_id=user_id).order_by(Notification.created_at.desc()).all()
     notifications_data = [{
@@ -1626,18 +1598,10 @@ def get_notifications():
 
     return jsonify(notifications_data), 200
 
-# Mark a notification as read
 @app.route('/notifications/<int:notification_id>/read', methods=['PUT'])
+@jwt_required()
 def mark_notification_as_read(notification_id):
-    token = request.headers.get('Authorization')
-    if not token:
-        return jsonify({'error': 'Token is missing'}), 401
-
-    try:
-        data = jwt.decode(token.split()[1], app.config['SECRET_KEY'], algorithms=['HS256'])
-        user_id = data['user_id']
-    except:
-        return jsonify({'error': 'Invalid token'}), 401
+    user_id = get_jwt_identity()
 
     notification = Notification.query.filter_by(id=notification_id, user_id=user_id).first()
     if not notification:
@@ -1648,18 +1612,10 @@ def mark_notification_as_read(notification_id):
 
     return jsonify({'message': 'Notification marked as read'}), 200
 
-# Delete a notification
 @app.route('/notifications/<int:notification_id>', methods=['DELETE'])
+@jwt_required()
 def delete_notification(notification_id):
-    token = request.headers.get('Authorization')
-    if not token:
-        return jsonify({'error': 'Token is missing'}), 401
-
-    try:
-        data = jwt.decode(token.split()[1], app.config['SECRET_KEY'], algorithms=['HS256'])
-        user_id = data['user_id']
-    except:
-        return jsonify({'error': 'Invalid token'}), 401
+    user_id = get_jwt_identity()
 
     notification = Notification.query.filter_by(id=notification_id, user_id=user_id).first()
     if not notification:
