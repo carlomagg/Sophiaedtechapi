@@ -8,6 +8,7 @@ from flask_jwt_extended import JWTManager, create_access_token, create_refresh_t
 from functools import wraps
 from flask_sqlalchemy import SQLAlchemy 
 import datetime
+from dateutil import parser
 from flask_cors import CORS
 
 
@@ -547,10 +548,8 @@ def refresh():
 @jwt_required()
 def profile():
     user_email = get_jwt_identity()
-    print(f"Extracted user_email: {user_email}")  # Debug statement
     user = User.query.filter_by(email=user_email).first()
     if not user:
-        print(f"User not found for email: {user_email}")  # Debug statement
         return jsonify({'error': 'User not found'}), 404
 
     if request.method == 'GET':
@@ -563,53 +562,57 @@ def profile():
                 'country_region': user.location.country_region if user.location else None,
                 'city': user.location.city if user.location else None
             },
-            'education': [
-                {
-                    'id': education.id,
-                    'school': education.school,
-                    'degree': education.degree,
-                    'field_of_study': education.field_of_study,
-                    'start_date': education.start_date.isoformat() if education.start_date else None,
-                    'end_date': education.end_date.isoformat() if education.end_date else None
-                } for education in user.education
-            ],
-            'work_experience': [
-                {
-                    'id': work.id,
-                    'company': work.company,
-                    'role_title': work.role_title,
-                    'job_description': work.job_description,
-                    'start_date': work.start_date.isoformat() if work.start_date else None,
-                    'end_date': work.end_date.isoformat() if work.end_date else None
-                } for work in user.work_experience
-            ],
-            'licenses_certifications': [
-                {
-                    'id': license.id,
-                    'name': license.name,
-                    'issuing_organization': license.issuing_organization,
-                    'issue_date': license.issue_date.isoformat() if license.issue_date else None,
-                    'expiration_date': license.expiration_date.isoformat() if license.expiration_date else None,
-                    'credentials_id': license.credentials_id,
-                    'credential_url': license.credential_url
-                } for license in user.licenses_certifications
-            ]
+            'education': [{
+                'id': edu.id,
+                'school': edu.school,
+                'degree': edu.degree,
+                'field_of_study': edu.field_of_study,
+                'start_date': edu.start_date.isoformat() if edu.start_date else None,
+                'end_date': edu.end_date.isoformat() if edu.end_date else None
+            } for edu in user.education],
+            'work_experience': [{
+                'id': work.id,
+                'company': work.company,
+                'role_title': work.role_title,
+                'job_description': work.job_description,
+                'start_date': work.start_date.isoformat() if work.start_date else None,
+                'end_date': work.end_date.isoformat() if work.end_date else None
+            } for work in user.work_experience],
+            'licenses_certifications': [{
+                'id': lic.id,
+                'name': lic.name,
+                'issuing_organization': lic.issuing_organization,
+                'issue_date': lic.issue_date.isoformat() if lic.issue_date else None,
+                'expiration_date': lic.expiration_date.isoformat() if lic.expiration_date else None,
+                'credentials_id': lic.credentials_id,
+                'credential_url': lic.credential_url
+            } for lic in user.licenses_certifications]
         }
         return jsonify(user_data), 200
 
     if request.method == 'PUT':
         data = request.get_json()
 
+        # Check if the new email already exists
+        new_email = data.get('email')
+        if new_email and new_email != user.email:
+            existing_user = User.query.filter_by(email=new_email).first()
+            if existing_user:
+                return jsonify({'error': 'Email already in use'}), 400
+
         user.full_name = data.get('full_name', user.full_name)
+        user.email = new_email or user.email
         user.bio = data.get('bio', user.bio)
         user.profile_image = data.get('profile_image', user.profile_image)
 
+        # Update location
         location_data = data.get('location', {})
         if user.location:
             user.location.country_region = location_data.get('country_region', user.location.country_region)
             user.location.city = location_data.get('city', user.location.city)
         else:
             user.location = Location(
+                user_id=user.id,
                 country_region=location_data.get('country_region'),
                 city=location_data.get('city')
             )
@@ -618,75 +621,80 @@ def profile():
         education_data = data.get('education', [])
         for edu_data in education_data:
             education_id = edu_data.get('id')
-            if education_id:
-                education = Education.query.get(education_id)
-                if education:
-                    education.school = edu_data.get('school', education.school)
-                    education.degree = edu_data.get('degree', education.degree)
-                    education.field_of_study = edu_data.get('field_of_study', education.field_of_study)
-                    education.start_date = datetime.fromisoformat(edu_data.get('start_date')) if edu_data.get('start_date') else None
-                    education.end_date = datetime.fromisoformat(edu_data.get('end_date')) if edu_data.get('end_date') else None
+            education = Education.query.get(education_id) if education_id else None
+            if education:
+                education.school = edu_data.get('school', education.school)
+                education.degree = edu_data.get('degree', education.degree)
+                education.field_of_study = edu_data.get('field_of_study', education.field_of_study)
+                education.start_date = parser.parse(edu_data.get('start_date')) if edu_data.get('start_date') else None
+                education.end_date = parser.parse(edu_data.get('end_date')) if edu_data.get('end_date') else None
             else:
                 education = Education(
                     user_id=user.id,
                     school=edu_data.get('school'),
                     degree=edu_data.get('degree'),
                     field_of_study=edu_data.get('field_of_study'),
-                    start_date=datetime.fromisoformat(edu_data.get('start_date')) if edu_data.get('start_date') else None,
-                    end_date=datetime.fromisoformat(edu_data.get('end_date')) if edu_data.get('end_date') else None
+                    start_date=parser.parse(edu_data.get('start_date')) if edu_data.get('start_date') else None,
+                    end_date=parser.parse(edu_data.get('end_date')) if edu_data.get('end_date') else None
                 )
-                user.education.append(education)
+                db.session.add(education)
 
         # Update work experience
         work_experience_data = data.get('work_experience', [])
         for work_data in work_experience_data:
             work_id = work_data.get('id')
-            if work_id:
-                work = WorkExperience.query.get(work_id)
-                if work:
-                    work.company = work_data.get('company', work.company)
-                    work.role_title = work_data.get('role_title', work.role_title)
-                    work.job_description = work_data.get('job_description', work.job_description)
-                    work.start_date = datetime.fromisoformat(work_data.get('start_date')) if work_data.get('start_date') else None
-                    work.end_date = datetime.fromisoformat(work_data.get('end_date')) if work_data.get('end_date') else None
+            work = WorkExperience.query.get(work_id) if work_id else None
+            if work:
+                work.company = work_data.get('company', work.company)
+                work.role_title = work_data.get('role_title', work.role_title)
+                work.job_description = work_data.get('job_description', work.job_description)
+                work.start_date = parser.parse(work_data.get('start_date')) if work_data.get('start_date') else None
+                work.end_date = parser.parse(work_data.get('end_date')) if work_data.get('end_date') else None
             else:
                 work = WorkExperience(
                     user_id=user.id,
                     company=work_data.get('company'),
                     role_title=work_data.get('role_title'),
                     job_description=work_data.get('job_description'),
-                    start_date=datetime.fromisoformat(work_data.get('start_date')) if work_data.get('start_date') else None,
-                    end_date=datetime.fromisoformat(work_data.get('end_date')) if work_data.get('end_date') else None
+                    start_date=parser.parse(work_data.get('start_date')) if work_data.get('start_date') else None,
+                    end_date=parser.parse(work_data.get('end_date')) if work_data.get('end_date') else None
                 )
-                user.work_experience.append(work)
+                db.session.add(work)
 
         # Update licenses and certifications
         licenses_certifications_data = data.get('licenses_certifications', [])
         for license_data in licenses_certifications_data:
             license_id = license_data.get('id')
-            if license_id:
-                license = LicenseCertification.query.get(license_id)
-                if license:
-                    license.name = license_data.get('name', license.name)
-                    license.issuing_organization = license_data.get('issuing_organization', license.issuing_organization)
-                    license.issue_date = datetime.fromisoformat(license_data.get('issue_date')) if license_data.get('issue_date') else None
-                    license.expiration_date = datetime.fromisoformat(license_data.get('expiration_date')) if license_data.get('expiration_date') else None
-                    license.credentials_id = license_data.get('credentials_id', license.credentials_id)
-                    license.credential_url = license_data.get('credential_url', license.credential_url)
+            license = LicenseCertification.query.get(license_id) if license_id else None
+            if license:
+                license.name = license_data.get('name', license.name)
+                license.issuing_organization = license_data.get('issuing_organization', license.issuing_organization)
+                license.issue_date = parser.parse(license_data.get('issue_date')) if license_data.get('issue_date') else None
+                license.expiration_date = parser.parse(license_data.get('expiration_date')) if license_data.get('expiration_date') else None
+                license.credentials_id = license_data.get('credentials_id', license.credentials_id)
+                license.credential_url = license_data.get('credential_url', license.credential_url)
             else:
                 license = LicenseCertification(
                     user_id=user.id,
                     name=license_data.get('name'),
                     issuing_organization=license_data.get('issuing_organization'),
-                    issue_date=datetime.fromisoformat(license_data.get('issue_date')) if license_data.get('issue_date') else None,
-                    expiration_date=datetime.fromisoformat(license_data.get('expiration_date')) if license_data.get('expiration_date') else None,
+                    issue_date=parser.parse(license_data.get('issue_date')) if license_data.get('issue_date') else None,
+                    expiration_date=parser.parse(license_data.get('expiration_date')) if license_data.get('expiration_date') else None,
                     credentials_id=license_data.get('credentials_id'),
                     credential_url=license_data.get('credential_url')
                 )
-                user.licenses_certifications.append(license)
+                db.session.add(license)
 
-        db.session.commit()
-        return jsonify({'message': 'Profile updated successfully'}), 200
+        try:
+            db.session.commit()
+            return jsonify({'message': 'Profile updated successfully'}), 200
+        except Exception as e:
+            db.session.rollback()
+            return jsonify({'error': f'An error occurred: {str(e)}'}), 500
+
+    # This should never be reached, but add it as a safeguard
+    return jsonify({'error': 'Invalid request method'}), 405
+    #user endpoint
 
 @app.route('/users', methods=['GET'])
 @jwt_required()
@@ -748,6 +756,106 @@ def delete_user(user_id):
     db.session.delete(user)
     db.session.commit()
     return jsonify({'message': 'User deleted successfully'}), 200
+
+
+    @app.route('/user/<int:user_id>', methods=['PUT'])
+    @jwt_required()
+    def update_user(user_id):
+     user = User.query.get(user_id)
+    if not user:
+        return jsonify({'error': 'User not found'}), 404
+    
+    data = request.get_json()
+    
+    user.full_name = data.get('full_name', user.full_name)
+    user.email = data.get('email', user.email)
+    user.bio = data.get('bio', user.bio)
+    user.profile_image = data.get('profile_image', user.profile_image)
+
+    # Update location
+    location_data = data.get('location', {})
+    if user.location:
+        user.location.country_region = location_data.get('country_region', user.location.country_region)
+        user.location.city = location_data.get('city', user.location.city)
+    else:
+        user.location = Location(
+            country_region=location_data.get('country_region'),
+            city=location_data.get('city')
+        )
+
+    # Update education
+    education_data = data.get('education', [])
+    for edu_data in education_data:
+        education_id = edu_data.get('id')
+        if education_id:
+            education = Education.query.get(education_id)
+            if education and education.user_id == user.id:
+                education.school = edu_data.get('school', education.school)
+                education.degree = edu_data.get('degree', education.degree)
+                education.field_of_study = edu_data.get('field_of_study', education.field_of_study)
+                education.start_date = datetime.fromisoformat(edu_data.get('start_date')) if edu_data.get('start_date') else None
+                education.end_date = datetime.fromisoformat(edu_data.get('end_date')) if edu_data.get('end_date') else None
+        else:
+            education = Education(
+                user_id=user.id,
+                school=edu_data.get('school'),
+                degree=edu_data.get('degree'),
+                field_of_study=edu_data.get('field_of_study'),
+                start_date=datetime.fromisoformat(edu_data.get('start_date')) if edu_data.get('start_date') else None,
+                end_date=datetime.fromisoformat(edu_data.get('end_date')) if edu_data.get('end_date') else None
+            )
+            user.education.append(education)
+
+    # Update work experience
+    work_experience_data = data.get('work_experience', [])
+    for work_data in work_experience_data:
+        work_id = work_data.get('id')
+        if work_id:
+            work = WorkExperience.query.get(work_id)
+            if work and work.user_id == user.id:
+                work.company = work_data.get('company', work.company)
+                work.role_title = work_data.get('role_title', work.role_title)
+                work.job_description = work_data.get('job_description', work.job_description)
+                work.start_date = datetime.fromisoformat(work_data.get('start_date')) if work_data.get('start_date') else None
+                work.end_date = datetime.fromisoformat(work_data.get('end_date')) if work_data.get('end_date') else None
+        else:
+            work = WorkExperience(
+                user_id=user.id,
+                company=work_data.get('company'),
+                role_title=work_data.get('role_title'),
+                job_description=work_data.get('job_description'),
+                start_date=datetime.fromisoformat(work_data.get('start_date')) if work_data.get('start_date') else None,
+                end_date=datetime.fromisoformat(work_data.get('end_date')) if work_data.get('end_date') else None
+            )
+            user.work_experience.append(work)
+
+    # Update licenses and certifications
+    licenses_certifications_data = data.get('licenses_certifications', [])
+    for license_data in licenses_certifications_data:
+        license_id = license_data.get('id')
+        if license_id:
+            license = LicenseCertification.query.get(license_id)
+            if license and license.user_id == user.id:
+                license.name = license_data.get('name', license.name)
+                license.issuing_organization = license_data.get('issuing_organization', license.issuing_organization)
+                license.issue_date = datetime.fromisoformat(license_data.get('issue_date')) if license_data.get('issue_date') else None
+                license.expiration_date = datetime.fromisoformat(license_data.get('expiration_date')) if license_data.get('expiration_date') else None
+                license.credentials_id = license_data.get('credentials_id', license.credentials_id)
+                license.credential_url = license_data.get('credential_url', license.credential_url)
+        else:
+            license = LicenseCertification(
+                user_id=user.id,
+                name=license_data.get('name'),
+                issuing_organization=license_data.get('issuing_organization'),
+                issue_date=datetime.fromisoformat(license_data.get('issue_date')) if license_data.get('issue_date') else None,
+                expiration_date=datetime.fromisoformat(license_data.get('expiration_date')) if license_data.get('expiration_date') else None,
+                credentials_id=license_data.get('credentials_id'),
+                credential_url=license_data.get('credential_url')
+            )
+            user.licenses_certifications.append(license)
+
+    db.session.commit()
+    return jsonify({'message': 'User updated successfully'}), 200
 
 
 # Profile code ends here
