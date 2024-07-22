@@ -694,6 +694,151 @@ def profile():
 
     # This should never be reached, but add it as a safeguard
     return jsonify({'error': 'Invalid request method'}), 405
+
+#add/delete profile items
+@app.route('/user/experience', methods=['POST', 'DELETE'])
+@jwt_required()
+def manage_experience():
+    user_email = get_jwt_identity()
+    user = User.query.filter_by(email=user_email).first()
+    if not user:
+        return jsonify({'error': 'User not found'}), 404
+
+    if request.method == 'POST':
+        data = request.get_json()
+        new_experience = WorkExperience(
+            user_id=user.id,
+            company=data.get('company'),
+            role_title=data.get('role_title'),
+            job_description=data.get('job_description'),
+            start_date=parser.parse(data.get('start_date')) if data.get('start_date') else None,
+            end_date=parser.parse(data.get('end_date')) if data.get('end_date') else None
+        )
+        db.session.add(new_experience)
+
+        try:
+            db.session.commit()
+            return jsonify({'message': 'Experience added successfully', 'id': new_experience.id}), 201
+        except Exception as e:
+            db.session.rollback()
+            return jsonify({'error': f'An error occurred: {str(e)}'}), 500
+
+    elif request.method == 'DELETE':
+        experience_id = request.args.get('id')
+        if not experience_id:
+            return jsonify({'error': 'Experience ID is required'}), 400
+
+        experience = WorkExperience.query.get(experience_id)
+        if not experience or experience.user_id != user.id:
+            return jsonify({'error': 'Experience not found or not authorized'}), 404
+
+        db.session.delete(experience)
+
+        try:
+            db.session.commit()
+            return jsonify({'message': 'Experience deleted successfully'}), 200
+        except Exception as e:
+            db.session.rollback()
+            return jsonify({'error': f'An error occurred: {str(e)}'}), 500
+
+    return jsonify({'error': 'Invalid request method'}), 405
+
+@app.route('/user/education', methods=['POST', 'DELETE'])
+@jwt_required()
+def manage_education():
+    user_email = get_jwt_identity()
+    user = User.query.filter_by(email=user_email).first()
+    if not user:
+        return jsonify({'error': 'User not found'}), 404
+
+    if request.method == 'POST':
+        data = request.get_json()
+        new_education = Education(
+            user_id=user.id,
+            school=data.get('school'),
+            degree=data.get('degree'),
+            field_of_study=data.get('field_of_study'),
+            start_date=parser.parse(data.get('start_date')) if data.get('start_date') else None,
+            end_date=parser.parse(data.get('end_date')) if data.get('end_date') else None
+        )
+        db.session.add(new_education)
+
+        try:
+            db.session.commit()
+            return jsonify({'message': 'Education added successfully', 'id': new_education.id}), 201
+        except Exception as e:
+            db.session.rollback()
+            return jsonify({'error': f'An error occurred: {str(e)}'}), 500
+
+    elif request.method == 'DELETE':
+        education_id = request.args.get('id')
+        if not education_id:
+            return jsonify({'error': 'Education ID is required'}), 400
+
+        education = Education.query.get(education_id)
+        if not education or education.user_id != user.id:
+            return jsonify({'error': 'Education not found or not authorized'}), 404
+
+        db.session.delete(education)
+
+        try:
+            db.session.commit()
+            return jsonify({'message': 'Education deleted successfully'}), 200
+        except Exception as e:
+            db.session.rollback()
+            return jsonify({'error': f'An error occurred: {str(e)}'}), 500
+
+    return jsonify({'error': 'Invalid request method'}), 405
+
+@app.route('/user/license', methods=['POST', 'DELETE'])
+@jwt_required()
+def manage_license():
+    user_email = get_jwt_identity()
+    user = User.query.filter_by(email=user_email).first()
+    if not user:
+        return jsonify({'error': 'User not found'}), 404
+
+    if request.method == 'POST':
+        data = request.get_json()
+        new_license = LicenseCertification(
+            user_id=user.id,
+            name=data.get('name'),
+            issuing_organization=data.get('issuing_organization'),
+            issue_date=parser.parse(data.get('issue_date')) if data.get('issue_date') else None,
+            expiration_date=parser.parse(data.get('expiration_date')) if data.get('expiration_date') else None,
+            credentials_id=data.get('credentials_id'),
+            credential_url=data.get('credential_url')
+        )
+        db.session.add(new_license)
+
+        try:
+            db.session.commit()
+            return jsonify({'message': 'License/Certification added successfully', 'id': new_license.id}), 201
+        except Exception as e:
+            db.session.rollback()
+            return jsonify({'error': f'An error occurred: {str(e)}'}), 500
+
+    elif request.method == 'DELETE':
+        license_id = request.args.get('id')
+        if not license_id:
+            return jsonify({'error': 'License/Certification ID is required'}), 400
+
+        license = LicenseCertification.query.get(license_id)
+        if not license or license.user_id != user.id:
+            return jsonify({'error': 'License/Certification not found or not authorized'}), 404
+
+        db.session.delete(license)
+
+        try:
+            db.session.commit()
+            return jsonify({'message': 'License/Certification deleted successfully'}), 200
+        except Exception as e:
+            db.session.rollback()
+            return jsonify({'error': f'An error occurred: {str(e)}'}), 500
+
+    return jsonify({'error': 'Invalid request method'}), 405
+
+
     #user endpoint
 
 @app.route('/users', methods=['GET'])
