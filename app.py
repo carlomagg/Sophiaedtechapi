@@ -14,6 +14,7 @@ from flask_cors import CORS
 
 app = Flask(__name__)
 CORS(app)
+app.config['MAX_CONTENT_LENGTH'] = 64 * 1024 * 1024
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///database.db'
 app.config['SECRET_KEY'] = '8Zn9Ql0gTvRqW3EzDX4uKX0nPjVqRnGp'
 app.config['UPLOAD_FOLDER'] = 'uploads/profile_images'
@@ -27,8 +28,9 @@ os.makedirs(app.config['USER_POST_UPLOAD_FOLDER'], exist_ok=True)
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(hours=1)
 app.config['JWT_REFRESH_TOKEN_EXPIRES'] = timedelta(days=30)
+PROFILE_IMAGE_UPLOAD_FOLDER = 'uploads/profile_images'
+app.config['PROFILE_IMAGE_UPLOAD_FOLDER'] = PROFILE_IMAGE_UPLOAD_FOLDER
 jwt = JWTManager(app)
-
 
 
 
@@ -78,7 +80,7 @@ class User(db.Model):
 
 
 
-
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
 
 
 # Location model
@@ -1008,8 +1010,7 @@ def delete_user(user_id):
 
 
 # Define upload directory# Define upload directory
-UPLOAD_FOLDER = 'uploads/profile_images'
-app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+
 
 # Function to get user ID (this is just a placeholder, replace with your actual implementation)
 def get_user_id_somehow():
@@ -1018,27 +1019,44 @@ def get_user_id_somehow():
     return user_id
 
 # Route to handle profile image uploads
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
+
+def allowed_file(filename):
+    return '.' in filename and \
+           filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
 @app.route('/upload_profile_image', methods=['POST'])
+@jwt_required()
 def upload_profile_image():
     if 'file' not in request.files:
-        return jsonify({'error': 'No file part'}), 400
+        return jsonify({'error': 'No file part in the request'}), 400
 
     file = request.files['file']
+
     if file.filename == '':
         return jsonify({'error': 'No selected file'}), 400
 
-    if file:
+    if file and allowed_file(file.filename):
         filename = secure_filename(file.filename)
-        file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
-        # Save the image path to the database
-        user_id = get_user_id_somehow()  # Call the function to get the user ID
+        
+        # Create the profile images upload folder if it doesn't exist
+        os.makedirs(app.config['PROFILE_IMAGE_UPLOAD_FOLDER'], exist_ok=True)
+        
+        file_path = os.path.join(app.config['PROFILE_IMAGE_UPLOAD_FOLDER'], filename)
+        file.save(file_path)
+        
+        user_id = get_jwt_identity()
         user = User.query.get(user_id)
-        user.profile_image = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        if user is None:
+            return jsonify({'error': 'User not found'}), 404
+        
+        # Store the relative path in the database
+        user.profile_image = os.path.join('profile_images', filename)
         db.session.commit()
+        
         return jsonify({'message': 'Profile image uploaded successfully'}), 200
     else:
-        return jsonify({'error': 'Upload failed'}), 500
-    
+        return jsonify({'error': 'Invalid file type'}), 400
      # Image upolad function ends here
 
 
