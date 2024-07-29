@@ -4,7 +4,7 @@ from flask import Flask, request, jsonify
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash
 from werkzeug.security import generate_password_hash, check_password_hash
-from flask_jwt_extended import JWTManager, create_access_token, create_refresh_token, jwt_required, get_jwt_identity
+from flask_jwt_extended import JWTManager, create_access_token, create_refresh_token, jwt_required, get_jwt_identity, get_jwt
 from functools import wraps
 from flask_sqlalchemy import SQLAlchemy 
 import datetime
@@ -1065,9 +1065,11 @@ def upload_profile_image():
 class Blog(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     title = db.Column(db.String(200), nullable=False)
+    subheading = db.Column(db.String(200), nullable=True)
     featured_image = db.Column(db.String(200), nullable=True)
     content = db.Column(db.Text, nullable=False)
     category = db.Column(db.String(100), nullable=True)
+    minutes_read = db.Column(db.Integer, nullable=True)
     author_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     author = db.relationship('User', backref=db.backref('blogs', lazy='dynamic'))
     date_created = db.Column(db.DateTime, nullable=False, default=datetime.datetime.utcnow)
@@ -1077,21 +1079,31 @@ class Blog(db.Model):
 @jwt_required()
 def create_blog():
     author_id = get_jwt_identity()
-
+    
     data = request.get_json()
     title = data.get('title')
+    subheading = data.get('subheading')
     featured_image = data.get('featured_image')
     content = data.get('content')
     category = data.get('category')
-
+    minutes_read = data.get('minutes_read')
+    
     if not title or not content:
         return jsonify({'error': 'Title and content are required'}), 400
-
-    blog = Blog(title=title, featured_image=featured_image, content=content, category=category, author_id=author_id)
-
+    
+    blog = Blog(
+        title=title,
+        subheading=subheading,
+        featured_image=featured_image,
+        content=content,
+        category=category,
+        minutes_read=minutes_read,
+        author_id=author_id
+    )
+    
     db.session.add(blog)
     db.session.commit()
-
+    
     return jsonify({'message': 'Blog post created successfully'}), 201
 
 # Get all blog posts
@@ -1101,10 +1113,12 @@ def get_blogs():
     blogs_data = [{
         'id': blog.id,
         'title': blog.title,
+        'subheading': blog.subheading,
         'featured_image': blog.featured_image,
         'content': blog.content,
         'category': blog.category,
-        'author': blog.author.full_name,
+        'minutes_read': blog.minutes_read,
+        'author': blog.author.full_name if blog.author else 'Unknown',
         'date_created': blog.date_created
     } for blog in blogs]
     return jsonify(blogs_data), 200
@@ -1115,13 +1129,15 @@ def get_blog(blog_id):
     blog = Blog.query.get(blog_id)
     if not blog:
         return jsonify({'error': 'Blog post not found'}), 404
-
+    
     blog_data = {
         'id': blog.id,
         'title': blog.title,
+        'subheading': blog.subheading,
         'featured_image': blog.featured_image,
         'content': blog.content,
         'category': blog.category,
+        'minutes_read': blog.minutes_read,
         'author': blog.author.full_name,
         'date_created': blog.date_created
     }
@@ -1132,22 +1148,24 @@ def get_blog(blog_id):
 @jwt_required()
 def update_blog(blog_id):
     user_id = get_jwt_identity()
-
+    
     blog = Blog.query.get(blog_id)
     if not blog:
         return jsonify({'error': 'Blog post not found'}), 404
-
+    
     if blog.author_id != user_id:
         return jsonify({'error': 'Unauthorized to update this blog post'}), 403
-
+    
     data = request.get_json()
     blog.title = data.get('title', blog.title)
+    blog.subheading = data.get('subheading', blog.subheading)
     blog.featured_image = data.get('featured_image', blog.featured_image)
     blog.content = data.get('content', blog.content)
     blog.category = data.get('category', blog.category)
-
+    blog.minutes_read = data.get('minutes_read', blog.minutes_read)
+    
     db.session.commit()
-
+    
     return jsonify({'message': 'Blog post updated successfully'}), 200
 
 # Delete a blog post
@@ -1155,17 +1173,17 @@ def update_blog(blog_id):
 @jwt_required()
 def delete_blog(blog_id):
     user_id = get_jwt_identity()
-
+    
     blog = Blog.query.get(blog_id)
     if not blog:
         return jsonify({'error': 'Blog post not found'}), 404
-
+    
     if blog.author_id != user_id:
         return jsonify({'error': 'Unauthorized to delete this blog post'}), 403
-
+    
     db.session.delete(blog)
     db.session.commit()
-
+    
     return jsonify({'message': 'Blog post deleted successfully'}), 200
 
     # Blog ends here
@@ -1436,13 +1454,24 @@ def create_admin():
     if Admin.query.filter_by(username=username).first():
         return jsonify({'error': 'Admin already exists'}), 400
 
-    hashed_password = generate_password_hash(password, method='pbkdf2:sha256')
+    try:
+        hashed_password = generate_password_hash(password, method='pbkdf2:sha256')
 
-    admin = Admin(username=username, password=hashed_password)
-    db.session.add(admin)
-    db.session.commit()
+        admin = Admin(username=username, password=hashed_password)
+        db.session.add(admin)
+        db.session.commit()
 
-    return jsonify({'message': 'Admin created successfully'}), 201
+        # Generate JWT token with admin claim
+        access_token = create_access_token(identity=username, additional_claims={'is_admin': True})
+
+        return jsonify({
+            'message': 'Admin created successfully',
+            'access_token': access_token
+        }), 201
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': f'An error occurred: {str(e)}'}), 500
 
 # Admin login
 @app.route('/admin/login', methods=['POST'])
@@ -1468,10 +1497,21 @@ def admin_required():
         @wraps(fn)
         @jwt_required()
         def decorator(*args, **kwargs):
-            claims = get_jwt_identity()
-            if not claims.get('is_admin', False):
-                return jsonify({'error': 'Admin privileges required'}), 403
-            return fn(*args, **kwargs)
+            try:
+                claims = get_jwt()
+                print(f"Debug - JWT claims: {claims}")  # Debug print
+                
+                if not isinstance(claims, dict):
+                    print(f"Debug - claims is not a dict, it's a {type(claims)}")  # Debug print
+                    return jsonify({"msg": "Invalid token structure"}), 422
+                
+                if not claims.get('is_admin', False):
+                    return jsonify({"msg": "Admins only!"}), 403
+                
+                return fn(*args, **kwargs)
+            except Exception as e:
+                print(f"Debug - Exception in admin_required: {str(e)}")  # Debug print
+                return jsonify({"msg": "An error occurred while processing the request"}), 500
         return decorator
     return wrapper
 
