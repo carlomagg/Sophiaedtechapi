@@ -142,23 +142,33 @@ class Course(db.Model):
     image = db.Column(db.String(200), nullable=True)
     content = db.Column(db.Text, nullable=False)
     video = db.Column(db.String(200), nullable=True)
+    brief = db.Column(db.Text, nullable=True)
+    number_of_modules = db.Column(db.Integer, default=0)
     author_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     author = db.relationship('User', backref=db.backref('courses', lazy='dynamic'))
     date_created = db.Column(db.DateTime, nullable=False, default=datetime.datetime.utcnow)
     categories = db.relationship('CourseCategory', backref='course', lazy='dynamic')
     modules = db.relationship('Module', backref='course', lazy='dynamic')
+    categories = db.relationship('CourseCategory', secondary='course_category_association', back_populates='courses')
 
 # Module model
 class Module(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
+    description = db.Column(db.Text, nullable=True)
     course_id = db.Column(db.Integer, db.ForeignKey('course.id'), nullable=False)
 
 # CourseCategory model
 class CourseCategory(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(100), nullable=False)
-    course_id = db.Column(db.Integer, db.ForeignKey('course.id'), nullable=False)
+    name = db.Column(db.String(100), nullable=False, unique=True)
+    courses = db.relationship('Course', secondary='course_category_association', back_populates='categories')
+
+# Create an association table
+course_category_association = db.Table('course_category_association',
+    db.Column('course_id', db.Integer, db.ForeignKey('course.id')),
+    db.Column('category_id', db.Integer, db.ForeignKey('course_category.id'))
+)
 
 # Enrollment model
 enrollment_table = db.Table('enrollment',
@@ -179,21 +189,27 @@ def create_course():
     image = data.get('image')
     content = data.get('content')
     video = data.get('video')
+    brief = data.get('brief')
+    number_of_modules = data.get('number_of_modules', 0)
     category_names = data.get('categories', [])
     module_names = data.get('modules', [])
 
     if not title or not content:
         return jsonify({'error': 'Title and content are required'}), 400
 
-    course = Course(title=title, image=image, content=content, video=video, author_id=author_id)
+    course = Course(title=title, image=image, content=content, video=video, brief=brief, 
+                    number_of_modules=number_of_modules, author_id=author_id)
 
     for category_name in category_names:
-        category = CourseCategory(name=category_name)
+        category = CourseCategory.query.filter_by(name=category_name).first()
+        if not category:
+            category = CourseCategory(name=category_name)
+            db.session.add(category)
         course.categories.append(category)
 
     for module_name in module_names:
-        module = Module(name=module_name)
-        course.modules.append(module)
+        module = Module(name=module_name, course=course)
+        db.session.add(module)
 
     db.session.add(course)
     db.session.commit()
@@ -205,10 +221,29 @@ def create_course():
 @app.route('/courses', methods=['GET'])
 def get_courses():
     courses = Course.query.all()
-    courses_data = [{'id': course.id, 'title': course.title, 'image': course.image, 'content': course.content,
-                     'video': course.video, 'author': course.author.full_name, 'date_created': course.date_created,
-                     'categories': [category.name for category in course.categories],
-                     'modules': [module.name for module in course.modules]} for course in courses]
+    courses_data = []
+    for course in courses:
+        course_dict = {
+            'id': course.id,
+            'title': course.title,
+            'image': course.image,
+            'content': course.content,
+            'video': course.video,
+            'brief': course.brief,
+            'number_of_modules': course.number_of_modules,
+            'date_created': course.date_created.isoformat() if course.date_created else None,
+            'categories': [category.name for category in course.categories],
+            'modules': [module.name for module in course.modules]
+        }
+        
+        # Handle case where author might be None
+        if course.author:
+            course_dict['author'] = course.author.full_name
+        else:
+            course_dict['author'] = 'Unknown'
+
+        courses_data.append(course_dict)
+
     return jsonify(courses_data), 200
 
 # Get a specific course
@@ -325,11 +360,15 @@ def create_category():
     if not name:
         return jsonify({'error': 'Category name is required'}), 400
 
+    existing_category = CourseCategory.query.filter_by(name=name).first()
+    if existing_category:
+        return jsonify({'error': 'Category already exists'}), 400
+
     category = CourseCategory(name=name)
     db.session.add(category)
     db.session.commit()
 
-    return jsonify({'message': 'Category created successfully'}), 201
+    return jsonify({'message': 'Category created successfully', 'id': category.id}), 201
 
 # Get all categories
 @app.route('/categories', methods=['GET'])
@@ -372,22 +411,29 @@ def delete_category(category_id):
 def create_module():
     data = request.get_json()
     name = data.get('name')
+    description = data.get('description')
     course_id = data.get('course_id')
 
     if not name or not course_id:
         return jsonify({'error': 'Module name and course ID are required'}), 400
 
-    module = Module(name=name, course_id=course_id)
+    module = Module(name=name, description=description, course_id=course_id)
     db.session.add(module)
+    
+    course = Course.query.get(course_id)
+    if course:
+        course.number_of_modules += 1
+    
     db.session.commit()
 
     return jsonify({'message': 'Module created successfully'}), 201
+
 
 # Get all modules
 @app.route('/modules', methods=['GET'])
 def get_modules():
     modules = Module.query.all()
-    modules_data = [{'id': module.id, 'name': module.name, 'course_id': module.course_id} for module in modules]
+    modules_data = [{'id': module.id, 'name': module.name, 'description': module.description, 'course_id': module.course_id} for module in modules]
     return jsonify(modules_data), 200
 
 # Update a module
