@@ -136,6 +136,21 @@ class Notification(db.Model):
 
 
 # Course model
+#class Course(db.Model):
+   # id = db.Column(db.Integer, primary_key=True)
+   # title = db.Column(db.String(200), nullable=False)
+   ## image = db.Column(db.String(200), nullable=True)
+    #content = db.Column(db.Text, nullable=False)
+    #video = db.Column(db.String(200), nullable=True)
+    ##brief = db.Column(db.Text, nullable=True)
+   # number_of_modules = db.Column(db.Integer, default=0)
+    ##author_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+   # author = db.relationship('User', backref=db.backref('courses', lazy='dynamic'))
+   # date_created = db.Column(db.DateTime, nullable=False, default=datetime.datetime.utcnow)
+   # categories = db.relationship('CourseCategory', backref='course', lazy='dynamic')
+   # modules = db.relationship('Module', backref='course', lazy='dynamic')
+   # categories = db.relationship('CourseCategory', secondary='course_category_association', back_populates='courses')
+
 class Course(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     title = db.Column(db.String(200), nullable=False)
@@ -144,12 +159,12 @@ class Course(db.Model):
     video = db.Column(db.String(200), nullable=True)
     brief = db.Column(db.Text, nullable=True)
     number_of_modules = db.Column(db.Integer, default=0)
+    course_type = db.Column(db.String(50), nullable=True)  # New field
     author_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     author = db.relationship('User', backref=db.backref('courses', lazy='dynamic'))
     date_created = db.Column(db.DateTime, nullable=False, default=datetime.datetime.utcnow)
-    categories = db.relationship('CourseCategory', backref='course', lazy='dynamic')
-    modules = db.relationship('Module', backref='course', lazy='dynamic')
     categories = db.relationship('CourseCategory', secondary='course_category_association', back_populates='courses')
+    modules = db.relationship('Module', backref='course', lazy='dynamic')
 
 # Module model
 class Module(db.Model):
@@ -191,14 +206,23 @@ def create_course():
     video = data.get('video')
     brief = data.get('brief')
     number_of_modules = data.get('number_of_modules', 0)
+    course_type = data.get('course_type')  # New field
     category_names = data.get('categories', [])
     module_names = data.get('modules', [])
 
     if not title or not content:
         return jsonify({'error': 'Title and content are required'}), 400
 
-    course = Course(title=title, image=image, content=content, video=video, brief=brief, 
-                    number_of_modules=number_of_modules, author_id=author_id)
+    course = Course(
+        title=title, 
+        image=image, 
+        content=content, 
+        video=video, 
+        brief=brief, 
+        number_of_modules=number_of_modules,
+        course_type=course_type,  # New field
+        author_id=author_id
+    )
 
     for category_name in category_names:
         category = CourseCategory.query.filter_by(name=category_name).first()
@@ -231,6 +255,7 @@ def get_courses():
             'video': course.video,
             'brief': course.brief,
             'number_of_modules': course.number_of_modules,
+            'course_type': course.course_type,  # New field
             'date_created': course.date_created.isoformat() if course.date_created else None,
             'categories': [category.name for category in course.categories],
             'modules': [module.name for module in course.modules]
