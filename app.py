@@ -10,6 +10,8 @@ from flask_sqlalchemy import SQLAlchemy
 import datetime
 from dateutil import parser
 from flask_cors import CORS
+from PIL import Image
+import io
 
 
 app = Flask(__name__)
@@ -1091,43 +1093,55 @@ def get_user_id_somehow():
 
 # Route to handle profile image uploads
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
+MAX_IMAGE_SIZE = (1024, 1024)  # Maximum dimensions for the image
 
 def allowed_file(filename):
     return '.' in filename and \
            filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+def compress_image(image, max_size=MAX_IMAGE_SIZE):
+    img = Image.open(image)
+    img.thumbnail(max_size)
+    img_io = io.BytesIO()
+    img.save(img_io, format='JPEG', quality=85)
+    img_io.seek(0)
+    return img_io
 
 @app.route('/upload_profile_image', methods=['POST'])
 @jwt_required()
 def upload_profile_image():
     if 'file' not in request.files:
         return jsonify({'error': 'No file part in the request'}), 400
-
+    
     file = request.files['file']
-
     if file.filename == '':
         return jsonify({'error': 'No selected file'}), 400
-
-    if file and allowed_file(file.filename):
-        filename = secure_filename(file.filename)
-        
-        # Create the profile images upload folder if it doesn't exist
-        os.makedirs(app.config['PROFILE_IMAGE_UPLOAD_FOLDER'], exist_ok=True)
-        
-        file_path = os.path.join(app.config['PROFILE_IMAGE_UPLOAD_FOLDER'], filename)
-        file.save(file_path)
-        
-        user_id = get_jwt_identity()
-        user = User.query.get(user_id)
-        if user is None:
-            return jsonify({'error': 'User not found'}), 404
-        
-        # Store the relative path in the database
-        user.profile_image = os.path.join('profile_images', filename)
-        db.session.commit()
-        
-        return jsonify({'message': 'Profile image uploaded successfully'}), 200
-    else:
+    
+    if not allowed_file(file.filename):
         return jsonify({'error': 'Invalid file type'}), 400
+
+    filename = secure_filename(file.filename)
+    
+    # Create the profile images upload folder if it doesn't exist
+    os.makedirs(app.config['PROFILE_IMAGE_UPLOAD_FOLDER'], exist_ok=True)
+    
+    # Compress the image
+    compressed_image = compress_image(file)
+    
+    file_path = os.path.join(app.config['PROFILE_IMAGE_UPLOAD_FOLDER'], filename)
+    with open(file_path, 'wb') as f:
+        f.write(compressed_image.getvalue())
+    
+    user_id = get_jwt_identity()
+    user = User.query.get(user_id)
+    if user is None:
+        return jsonify({'error': 'User not found'}), 404
+    
+    # Store the relative path in the database
+    user.profile_image = os.path.join('profile_images', filename)
+    db.session.commit()
+    
+    return jsonify({'message': 'Profile image uploaded successfully'}), 200
      # Image upolad function ends here
 
 
