@@ -629,6 +629,7 @@ def profile():
 
     if request.method == 'GET':
         user_data = {
+            'id': user.id,
             'full_name': user.full_name,
             'email': user.email,
             'bio': user.bio,
