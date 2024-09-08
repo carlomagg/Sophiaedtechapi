@@ -14,6 +14,7 @@ from PIL import Image
 import io
 import cloudinary
 import cloudinary.uploader
+from sqlalchemy import or_
 
 app = Flask(__name__)
 CORS(app)
@@ -64,10 +65,11 @@ class User(db.Model):
     full_name = db.Column(db.String(100), nullable=False)
     email = db.Column(db.String(100), unique=True, nullable=False)
     password = db.Column(db.String(100), nullable=False)
-    confirm_password = db.Column(db.String(256), nullable=False)  # Added confirm_password field
+    confirm_password = db.Column(db.String(256), nullable=False)
     bio = db.Column(db.String(500), nullable=True)
+    phone_number = db.Column(db.String(20), nullable=True)  # New field
     profile_image = db.Column(db.String(200), nullable=True)
-
+    
     location = db.relationship('Location', backref='user', uselist=False)
     education = db.relationship('Education', backref='user')
     work_experience = db.relationship('WorkExperience', backref='user')
@@ -77,10 +79,9 @@ class User(db.Model):
     posts = db.relationship('UserPost', backref='user', lazy='dynamic')
     followed_courses = db.relationship('Course', secondary='course_followers', backref='followers')
     notifications = db.relationship('Notification', backref='user', lazy='dynamic')
-
+    
     def __repr__(self):
         return f'<User {self.email}>'
-
 
 
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
@@ -634,6 +635,7 @@ def profile():
             'full_name': user.full_name,
             'email': user.email,
             'bio': user.bio,
+            'phone_number': user.phone_number,  # Add this line
             'profile_image': user.profile_image,
             'location': {
                 'country_region': user.location.country_region if user.location else None,
@@ -680,6 +682,7 @@ def profile():
         user.full_name = data.get('full_name', user.full_name)
         user.email = new_email or user.email
         user.bio = data.get('bio', user.bio)
+        user.phone_number = data.get('phone_number', user.phone_number)  # Add this line
         user.profile_image = data.get('profile_image', user.profile_image)
 
         # Update location
@@ -771,6 +774,7 @@ def profile():
 
     # This should never be reached, but add it as a safeguard
     return jsonify({'error': 'Invalid request method'}), 405
+
 
 #add/delete profile items
 @app.route('/user/experience', methods=['POST', 'DELETE'])
@@ -1335,6 +1339,31 @@ def get_messages(other_user_id):
 
     return jsonify(messages_data), 200
 
+#Get user chat
+@app.route('/chat-users', methods=['GET'])
+@jwt_required()
+def get_chat_users_list():
+    current_user_id = get_jwt_identity()
+
+    # Query for users who have exchanged messages with the current user
+    chat_users = db.session.query(User).distinct().filter(
+        User.id != current_user_id
+    ).join(
+        Message, 
+        or_(
+            (Message.sender_id == User.id) & (Message.recipient_id == current_user_id),
+            (Message.recipient_id == User.id) & (Message.sender_id == current_user_id)
+        )
+    ).all()
+
+    users_data = [{
+        'id': user.id,
+        'full_name': user.full_name,
+        # Add any other user fields you want to include
+    } for user in chat_users]
+
+    return jsonify(users_data), 200
+
 # Get all messages for a user
 from flask_jwt_extended import jwt_required, get_jwt_identity
 
@@ -1342,7 +1371,27 @@ from flask_jwt_extended import jwt_required, get_jwt_identity
 @jwt_required()
 def get_all_messages():
     user_id = get_jwt_identity()
+    users_only = request.args.get('users_only', 'false').lower() == 'true'
 
+    if users_only:
+        # Query for unique users
+        chat_users = db.session.query(User).distinct().join(
+            Message, 
+            or_(
+                (Message.sender_id == User.id) & (Message.recipient_id == user_id),
+                (Message.recipient_id == User.id) & (Message.sender_id == user_id)
+            )
+        ).filter(User.id != user_id).all()
+
+        users_data = [{
+            'id': user.id,
+            'full_name': user.full_name,
+            # Add any other user fields you want to include
+        } for user in chat_users]
+
+        return jsonify(users_data), 200
+
+    # Existing code for full message data
     sent_messages = Message.query.filter_by(sender_id=user_id).all()
     received_messages = Message.query.filter_by(recipient_id=user_id).all()
 
@@ -1364,6 +1413,27 @@ def get_all_messages():
 
     return jsonify(messages_data), 200
 
+    # Existing code for full message data
+    sent_messages = Message.query.filter_by(sender_id=user_id).all()
+    received_messages = Message.query.filter_by(recipient_id=user_id).all()
+
+    messages_data = []
+    for message in sent_messages + received_messages:
+        other_user = message.recipient if message.sender_id == user_id else message.sender
+        messages_data.append({
+            'id': message.id,
+            'other_user_id': other_user.id,
+            'other_user_name': other_user.full_name,
+            'content': message.content,
+            'timestamp': message.timestamp,
+            'is_read': message.is_read,
+            'is_sent': message.sender_id == user_id
+        })
+
+    # Sort messages by timestamp
+    messages_data.sort(key=lambda x: x['timestamp'], reverse=True)
+
+    return jsonify(messages_data), 200
 # Mark a message as read
 @app.route('/messages/<int:message_id>/read', methods=['PUT'])
 @jwt_required()
@@ -1382,6 +1452,7 @@ def mark_message_as_read(message_id):
 
     return jsonify({'message': 'Message marked as read'}), 200
 
+    
 # Delete a message
 
 #peer review
