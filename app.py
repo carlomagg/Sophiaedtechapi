@@ -12,7 +12,8 @@ from dateutil import parser
 from flask_cors import CORS
 from PIL import Image
 import io
-
+import cloudinary
+import cloudinary.uploader
 
 app = Flask(__name__)
 CORS(app)
@@ -1093,6 +1094,13 @@ def get_user_id_somehow():
     return user_id
 
 # Route to handle profile image uploads
+# Configure Cloudinary
+cloudinary.config(
+    cloud_name = "dkj6ipdd6",
+    api_key = "921656148348163",
+    api_secret = "kQvQY26E6yWqS46f38Bc8hSXJQw"
+)
+
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
 MAX_IMAGE_SIZE = (1024, 1024)  # Maximum dimensions for the image
 
@@ -1121,30 +1129,26 @@ def upload_profile_image():
     if not allowed_file(file.filename):
         return jsonify({'error': 'Invalid file type'}), 400
 
-    filename = secure_filename(file.filename)
-    
-    # Create the profile images upload folder if it doesn't exist
-    os.makedirs(app.config['PROFILE_IMAGE_UPLOAD_FOLDER'], exist_ok=True)
-    
     # Compress the image
     compressed_image = compress_image(file)
-    
-    file_path = os.path.join(app.config['PROFILE_IMAGE_UPLOAD_FOLDER'], filename)
-    with open(file_path, 'wb') as f:
-        f.write(compressed_image.getvalue())
-    
+
+    # Upload to Cloudinary
+    try:
+        upload_result = cloudinary.uploader.upload(compressed_image.getvalue())
+        image_url = upload_result['secure_url']
+    except Exception as e:
+        return jsonify({'error': f'Failed to upload image to Cloudinary: {str(e)}'}), 500
+
     user_id = get_jwt_identity()
     user = User.query.get(user_id)
     if user is None:
         return jsonify({'error': 'User not found'}), 404
-    
-    # Store the relative path in the database
-    user.profile_image = os.path.join('profile_images', filename)
-    db.session.commit()
-    
-    return jsonify({'message': 'Profile image uploaded successfully'}), 200
-     # Image upolad function ends here
 
+    # Store the Cloudinary URL in the database
+    user.profile_image = image_url
+    db.session.commit()
+
+    return jsonify({'message': 'Profile image uploaded successfully', 'image_url': image_url}), 200
 
   # Blog starts here
   # Blog model
