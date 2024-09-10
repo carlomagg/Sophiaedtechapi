@@ -15,6 +15,7 @@ import io
 import cloudinary
 import cloudinary.uploader
 from sqlalchemy import or_
+import openai
 
 app = Flask(__name__)
 CORS(app)
@@ -36,6 +37,7 @@ PROFILE_IMAGE_UPLOAD_FOLDER = 'uploads/profile_images'
 app.config['PROFILE_IMAGE_UPLOAD_FOLDER'] = PROFILE_IMAGE_UPLOAD_FOLDER
 jwt = JWTManager(app)
 
+openai.api_key = "your-openai-api-key"
 
 
 db = SQLAlchemy(app)
@@ -69,6 +71,8 @@ class User(db.Model):
     bio = db.Column(db.String(500), nullable=True)
     phone_number = db.Column(db.String(20), nullable=True)  # New field
     profile_image = db.Column(db.String(200), nullable=True)
+    
+
     
     location = db.relationship('Location', backref='user', uselist=False)
     education = db.relationship('Education', backref='user')
@@ -2097,6 +2101,31 @@ def delete_notification(notification_id):
     db.session.commit()
 
     return jsonify({'message': 'Notification deleted successfully'}), 200
+
+    #Chatgpt code
+    
+
+@app.route('/api/chat', methods=['POST'])
+def chat():
+    data = request.json
+    user_message = data.get('message')
+    
+    if not user_message:
+        return jsonify({"error": "No message provided"}), 400
+
+    try:
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant."},
+                {"role": "user", "content": user_message}
+            ]
+        )
+        
+        ai_message = response.choices[0].message['content']
+        return jsonify({"response": ai_message})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 
