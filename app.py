@@ -16,6 +16,8 @@ import cloudinary
 import cloudinary.uploader
 from sqlalchemy import or_
 import openai
+from sqlalchemy.sql import func
+
 
 app = Flask(__name__)
 CORS(app)
@@ -1598,6 +1600,9 @@ class Admin(db.Model):
     fullname = db.Column(db.String(100))
     email = db.Column(db.String(100))
     phone = db.Column(db.String(20))
+    profile_image = db.Column(db.String(200))
+    created_at = db.Column(db.DateTime, server_default=func.now())
+    updated_at = db.Column(db.DateTime, server_default=func.now(), onupdate=func.now())
     roles = db.relationship('Role', secondary='admin_roles', back_populates='admins')
 
     def to_dict(self):
@@ -1607,9 +1612,11 @@ class Admin(db.Model):
             'fullname': self.fullname or '',
             'email': self.email or '',
             'phone': self.phone or '',
+            'profile_image': self.profile_image or '',
+            'created_at': self.created_at.isoformat() if self.created_at else '',
+            'updated_at': self.updated_at.isoformat() if self.updated_at else '',
             'roles': [{'id': role.id, 'name': role.name} for role in self.roles]
         }
-
 
 # Role model
 class Role(db.Model):
@@ -1762,6 +1769,49 @@ def delete_admin(admin_id):
     db.session.commit()
     
     return jsonify({'message': 'Admin deleted successfully'}), 200
+
+    #Update admin
+@app.route('/admin/update/<int:admin_id>', methods=['PUT'])
+@jwt_required()
+@admin_required()
+def update_admin_details(admin_id):
+    admin = Admin.query.get(admin_id)
+    if not admin:
+        return jsonify({'error': 'Admin not found'}), 404
+
+    data = request.get_json()
+
+    # Check if all required fields are present
+    required_fields = ['username', 'fullname', 'email', 'phone', 'profile_image', 'roles']
+    for field in required_fields:
+        if field not in data:
+            return jsonify({'error': f'Missing required field: {field}'}), 400
+
+    # Update all fields
+    admin.username = data['username']
+    admin.fullname = data['fullname']
+    admin.email = data['email']
+    admin.phone = data['phone']
+    admin.profile_image = data['profile_image']
+
+    # Update roles
+    new_roles = []
+    for role_id in data['roles']:
+        role = Role.query.get(role_id)
+        if role:
+            new_roles.append(role)
+        else:
+            return jsonify({'error': f'Role with id {role_id} not found'}), 400
+    admin.roles = new_roles
+
+    try:
+        db.session.commit()
+        return jsonify(admin.to_dict()), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': f'An error occurred: {str(e)}'}), 500
+
+
 
 
 # New endpoint: Assign role to admin
