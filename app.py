@@ -1595,7 +1595,20 @@ class Admin(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(100), unique=True, nullable=False)
     password = db.Column(db.String(100), nullable=False)
+    fullname = db.Column(db.String(100))
+    email = db.Column(db.String(100))
+    phone = db.Column(db.String(20))
     roles = db.relationship('Role', secondary='admin_roles', back_populates='admins')
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'username': self.username,
+            'fullname': self.fullname or '',
+            'email': self.email or '',
+            'phone': self.phone or '',
+            'roles': [{'id': role.id, 'name': role.name} for role in self.roles]
+        }
 
 
 # Role model
@@ -1726,7 +1739,7 @@ def delete_role(role_id):
 @admin_required()
 def get_all_admins():
     admins = Admin.query.all()
-    return jsonify([{'id': admin.id, 'username': admin.username} for admin in admins]), 200
+    return jsonify([admin.to_dict() for admin in admins]), 200
 
 
 # New endpoint: Fetch all roles
