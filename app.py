@@ -60,6 +60,10 @@ roles_users = db.Table('roles_users',
     db.Column('role_id', db.Integer, db.ForeignKey('role.id'), primary_key=True)
 )
 
+admin_roles = db.Table('admin_roles',
+    db.Column('admin_id', db.Integer, db.ForeignKey('admin.id'), primary_key=True),
+    db.Column('role_id', db.Integer, db.ForeignKey('role.id'), primary_key=True)
+)
 
 
 class User(db.Model):
@@ -1217,6 +1221,7 @@ def get_blogs():
         'category': blog.category,
         'minutes_read': blog.minutes_read,
         'author': blog.author.full_name if blog.author else 'Unknown',
+        'author_profile_image': blog.author.profile_image if blog.author else None,  # Updated this line
         'date_created': blog.date_created
     } for blog in blogs]
     return jsonify(blogs_data), 200
@@ -1237,9 +1242,11 @@ def get_blog(blog_id):
         'category': blog.category,
         'minutes_read': blog.minutes_read,
         'author': blog.author.full_name,
+        'author_profile_image': blog.author.profile_image,  # Updated this line
         'date_created': blog.date_created
     }
     return jsonify(blog_data), 200
+
 
 # Update a blog post
 @app.route('/blogs/<int:blog_id>', methods=['PUT'])
@@ -1322,11 +1329,39 @@ def send_message():
     return jsonify({'message': 'Message sent successfully'}), 201
 
 # Get messages between two users
+@app.route('/messages', methods=['GET'])
+@jwt_required()
+def get_all_messages():
+    user_id = get_jwt_identity()
+    users_only = request.args.get('users_only', 'false').lower() == 'true'
+
+    if users_only:
+        # Query for unique users
+        chat_users = db.session.query(User).distinct().join(
+            Message, or_(
+                (Message.sender_id == User.id) & (Message.recipient_id == user_id),
+                (Message.recipient_id == User.id) & (Message.sender_id == user_id)
+            )
+        ).filter(User.id != user_id).all()
+
+        users_data = [{
+            'id': user.id,
+            'full_name': user.full_name,
+            'profile_image': user.profile_image
+        } for user in chat_users]
+
+        return jsonify(users_data), 200
+
+    # Add a return for when `users_only` is False or not provided
+    return jsonify({"message": "No users found"}), 200
+
+
 @app.route('/messages/<int:other_user_id>', methods=['GET'])
 @jwt_required()
 def get_messages(other_user_id):
     user_id = get_jwt_identity()
 
+    # Get messages between two users
     messages = Message.query.filter(
         ((Message.sender_id == user_id) & (Message.recipient_id == other_user_id)) |
         ((Message.sender_id == other_user_id) & (Message.recipient_id == user_id))
@@ -1343,58 +1378,27 @@ def get_messages(other_user_id):
 
     return jsonify(messages_data), 200
 
-#Get user chat
+
 @app.route('/chat-users', methods=['GET'])
 @jwt_required()
 def get_chat_users_list():
     current_user_id = get_jwt_identity()
 
     # Query for users who have exchanged messages with the current user
-    chat_users = db.session.query(User).distinct().filter(
-        User.id != current_user_id
-    ).join(
-        Message, 
-        or_(
+    chat_users = db.session.query(User).distinct().join(
+        Message, or_(
             (Message.sender_id == User.id) & (Message.recipient_id == current_user_id),
             (Message.recipient_id == User.id) & (Message.sender_id == current_user_id)
         )
-    ).all()
+    ).filter(User.id != current_user_id).all()
 
     users_data = [{
         'id': user.id,
         'full_name': user.full_name,
-        # Add any other user fields you want to include
+        'profile_image': user.profile_image
     } for user in chat_users]
 
     return jsonify(users_data), 200
-
-# Get all messages for a user
-from flask_jwt_extended import jwt_required, get_jwt_identity
-
-@app.route('/messages', methods=['GET'])
-@jwt_required()
-def get_all_messages():
-    user_id = get_jwt_identity()
-    users_only = request.args.get('users_only', 'false').lower() == 'true'
-
-    if users_only:
-        # Query for unique users
-        chat_users = db.session.query(User).distinct().join(
-            Message, 
-            or_(
-                (Message.sender_id == User.id) & (Message.recipient_id == user_id),
-                (Message.recipient_id == User.id) & (Message.sender_id == user_id)
-            )
-        ).filter(User.id != user_id).all()
-
-        users_data = [{
-            'id': user.id,
-            'full_name': user.full_name,
-            # Add any other user fields you want to include
-        } for user in chat_users]
-
-        return jsonify(users_data), 200
-
     # Existing code for full message data
     sent_messages = Message.query.filter_by(sender_id=user_id).all()
     received_messages = Message.query.filter_by(recipient_id=user_id).all()
@@ -1591,11 +1595,15 @@ class Admin(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(100), unique=True, nullable=False)
     password = db.Column(db.String(100), nullable=False)
+    roles = db.relationship('Role', secondary='admin_roles', back_populates='admins')
+
 
 # Role model
 class Role(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), unique=True, nullable=False)
+    admins = db.relationship('Admin', secondary='admin_roles', back_populates='roles')
+
 
 # Instructor model
 class Instructor(db.Model):
@@ -1711,6 +1719,90 @@ def delete_role(role_id):
     db.session.commit()
 
     return jsonify({'message': 'Role deleted successfully'}), 200
+
+
+# New endpoint: Fetch all admins
+@app.route('/admin/admins', methods=['GET'])
+@admin_required()
+def get_all_admins():
+    admins = Admin.query.all()
+    return jsonify([{'id': admin.id, 'username': admin.username} for admin in admins]), 200
+
+
+# New endpoint: Fetch all roles
+@app.route('/admin/roles', methods=['GET'])
+@admin_required()
+def get_all_roles():
+    roles = Role.query.all()
+    return jsonify([{'id': role.id, 'name': role.name} for role in roles]), 200
+
+
+# New endpoint: Delete an admin
+@app.route('/admin/admins/<int:admin_id>', methods=['DELETE'])
+@admin_required()
+def delete_admin(admin_id):
+    admin = Admin.query.get(admin_id)
+    if not admin:
+        return jsonify({'error': 'Admin not found'}), 404
+    
+    db.session.delete(admin)
+    db.session.commit()
+    
+    return jsonify({'message': 'Admin deleted successfully'}), 200
+
+
+# New endpoint: Assign role to admin
+@app.route('/admin/assign-role', methods=['POST'])
+@admin_required()
+def assign_role_to_admin():
+    data = request.get_json()
+    admin_id = data.get('admin_id')
+    role_id = data.get('role_id')
+    
+    if not admin_id or not role_id:
+        return jsonify({'error': 'Admin ID and Role ID are required'}), 400
+    
+    admin = Admin.query.get(admin_id)
+    role = Role.query.get(role_id)
+    
+    if not admin or not role:
+        return jsonify({'error': 'Admin or Role not found'}), 404
+    
+    admin.roles.append(role)
+    db.session.commit()
+    
+    return jsonify({'message': 'Role assigned to admin successfully'}), 200
+
+
+
+    # New endpoint: Remove role from admin
+@app.route('/admin/remove-role', methods=['POST'])
+@admin_required()
+def remove_role_from_admin():
+    data = request.get_json()
+    admin_id = data.get('admin_id')
+    role_id = data.get('role_id')
+    
+    if not admin_id or not role_id:
+        return jsonify({'error': 'Admin ID and Role ID are required'}), 400
+    
+    admin = Admin.query.get(admin_id)
+    role = Role.query.get(role_id)
+    
+    if not admin or not role:
+        return jsonify({'error': 'Admin or Role not found'}), 404
+    
+    if role in admin.roles:
+        admin.roles.remove(role)
+        db.session.commit()
+        return jsonify({'message': 'Role removed from admin successfully'}), 200
+    else:
+        return jsonify({'error': 'Admin does not have this role'}), 400
+
+
+
+
+
 
 # Create instructor
 @app.route('/admin/instructors', methods=['POST'])
