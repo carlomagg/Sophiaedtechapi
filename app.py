@@ -1770,47 +1770,73 @@ def delete_admin(admin_id):
     
     return jsonify({'message': 'Admin deleted successfully'}), 200
 
+
     #Update admin
 @app.route('/admin/update/<int:admin_id>', methods=['PUT'])
 @jwt_required()
 @admin_required()
 def update_admin_details(admin_id):
-    admin = Admin.query.get(admin_id)
-    if not admin:
-        return jsonify({'error': 'Admin not found'}), 404
-
-    data = request.get_json()
-
-    # Check if all required fields are present
-    required_fields = ['username', 'fullname', 'email', 'phone', 'profile_image', 'roles']
-    for field in required_fields:
-        if field not in data:
-            return jsonify({'error': f'Missing required field: {field}'}), 400
-
-    # Update all fields
-    admin.username = data['username']
-    admin.fullname = data['fullname']
-    admin.email = data['email']
-    admin.phone = data['phone']
-    admin.profile_image = data['profile_image']
-
-    # Update roles
-    new_roles = []
-    for role_id in data['roles']:
-        role = Role.query.get(role_id)
-        if role:
-            new_roles.append(role)
-        else:
-            return jsonify({'error': f'Role with id {role_id} not found'}), 400
-    admin.roles = new_roles
-
+    logging.info(f"Attempting to update admin with ID: {admin_id}")
+    
     try:
-        db.session.commit()
-        return jsonify(admin.to_dict()), 200
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({'error': f'An error occurred: {str(e)}'}), 500
+        # Verify admin exists
+        admin = Admin.query.get(admin_id)
+        if not admin:
+            logging.warning(f"Admin not found with ID: {admin_id}")
+            return jsonify({'error': 'Admin not found'}), 404
 
+        # Parse JSON data with error handling
+        try:
+            data = request.get_json()
+            if not data:
+                raise BadRequest('No JSON data provided')
+        except BadRequest as e:
+            logging.error(f"Invalid JSON data: {str(e)}")
+            return jsonify({'error': 'Invalid JSON data provided'}), 400
+
+        # Validate required fields
+        required_fields = ['username', 'fullname', 'email', 'phone', 'profile_image', 'roles']
+        missing_fields = [field for field in required_fields if field not in data]
+        if missing_fields:
+            logging.warning(f"Missing required fields: {missing_fields}")
+            return jsonify({'error': f'Missing required fields: {", ".join(missing_fields)}'}), 400
+
+        # Update basic fields with validation
+        try:
+            admin.username = data['username']
+            admin.fullname = data['fullname']
+            admin.email = data['email']
+            admin.phone = data['phone']
+            admin.profile_image = data['profile_image']
+        except (KeyError, TypeError) as e:
+            logging.error(f"Error updating basic fields: {str(e)}")
+            return jsonify({'error': f'Invalid data format for field: {str(e)}'}), 400
+
+        # Update roles with validation
+        new_roles = []
+        for role_id in data['roles']:
+            role = Role.query.get(role_id)
+            if role:
+                new_roles.append(role)
+            else:
+                logging.warning(f"Role not found with ID: {role_id}")
+                return jsonify({'error': f'Role with id {role_id} not found'}), 400
+        
+        admin.roles = new_roles
+
+        # Commit changes with proper error handling
+        try:
+            db.session.commit()
+            logging.info(f"Successfully updated admin with ID: {admin_id}")
+            return jsonify(admin.to_dict()), 200
+        except Exception as e:
+            db.session.rollback()
+            logging.error(f"Database error during commit: {str(e)}")
+            return jsonify({'error': 'Database error occurred'}), 500
+
+    except Exception as e:
+        logging.error(f"Unexpected error in update_admin_details: {str(e)}")
+        return jsonify({'error': 'An unexpected error occurred'}), 500
 
 
 
