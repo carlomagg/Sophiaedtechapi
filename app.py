@@ -17,6 +17,8 @@ import cloudinary.uploader
 from sqlalchemy import or_
 import openai
 from sqlalchemy.sql import func
+import time
+import random
 
 
 app = Flask(__name__)
@@ -173,8 +175,9 @@ class Course(db.Model):
     video = db.Column(db.String(200), nullable=True)
     brief = db.Column(db.Text, nullable=True)
     number_of_modules = db.Column(db.Integer, default=0)
-    course_type = db.Column(db.String(50), nullable=True)  # New field
+    course_type = db.Column(db.String(50), nullable=True)
     author_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    instructor_id = db.Column(db.Integer, db.ForeignKey('instructor.id'), nullable=True)  # Add this line
     author = db.relationship('User', backref=db.backref('courses', lazy='dynamic'))
     date_created = db.Column(db.DateTime, nullable=False, default=datetime.datetime.utcnow)
     categories = db.relationship('CourseCategory', secondary='course_category_association', back_populates='courses')
@@ -220,12 +223,19 @@ def create_course():
     video = data.get('video')
     brief = data.get('brief')
     number_of_modules = data.get('number_of_modules', 0)
-    course_type = data.get('course_type')  # New field
+    course_type = data.get('course_type')
+    instructor_id = data.get('instructor_id')  # Add this line
     category_names = data.get('categories', [])
     module_names = data.get('modules', [])
 
     if not title or not content:
         return jsonify({'error': 'Title and content are required'}), 400
+
+    # Verify instructor exists if instructor_id is provided
+    if instructor_id:
+        instructor = Instructor.query.get(instructor_id)
+        if not instructor:
+            return jsonify({'error': 'Instructor not found'}), 404
 
     course = Course(
         title=title, 
@@ -234,8 +244,9 @@ def create_course():
         video=video, 
         brief=brief, 
         number_of_modules=number_of_modules,
-        course_type=course_type,  # New field
-        author_id=author_id
+        course_type=course_type,
+        author_id=author_id,
+        instructor_id=instructor_id  # Add this line
     )
 
     for category_name in category_names:
@@ -1023,14 +1034,13 @@ def delete_user(user_id):
     education_data = data.get('education', [])
     for edu_data in education_data:
         education_id = edu_data.get('id')
-        if education_id:
-            education = Education.query.get(education_id)
-            if education and education.user_id == user.id:
-                education.school = edu_data.get('school', education.school)
-                education.degree = edu_data.get('degree', education.degree)
-                education.field_of_study = edu_data.get('field_of_study', education.field_of_study)
-                education.start_date = datetime.fromisoformat(edu_data.get('start_date')) if edu_data.get('start_date') else None
-                education.end_date = datetime.fromisoformat(edu_data.get('end_date')) if edu_data.get('end_date') else None
+        education = Education.query.get(education_id) if education_id else None
+        if education:
+            education.school = edu_data.get('school', education.school)
+            education.degree = edu_data.get('degree', education.degree)
+            education.field_of_study = edu_data.get('field_of_study', education.field_of_study)
+            education.start_date = datetime.fromisoformat(edu_data.get('start_date')) if edu_data.get('start_date') else None
+            education.end_date = datetime.fromisoformat(edu_data.get('end_date')) if edu_data.get('end_date') else None
         else:
             education = Education(
                 user_id=user.id,
@@ -1046,14 +1056,13 @@ def delete_user(user_id):
     work_experience_data = data.get('work_experience', [])
     for work_data in work_experience_data:
         work_id = work_data.get('id')
-        if work_id:
-            work = WorkExperience.query.get(work_id)
-            if work and work.user_id == user.id:
-                work.company = work_data.get('company', work.company)
-                work.role_title = work_data.get('role_title', work.role_title)
-                work.job_description = work_data.get('job_description', work.job_description)
-                work.start_date = datetime.fromisoformat(work_data.get('start_date')) if work_data.get('start_date') else None
-                work.end_date = datetime.fromisoformat(work_data.get('end_date')) if work_data.get('end_date') else None
+        work = WorkExperience.query.get(work_id) if work_id else None
+        if work:
+            work.company = work_data.get('company', work.company)
+            work.role_title = work_data.get('role_title', work.role_title)
+            work.job_description = work_data.get('job_description', work.job_description)
+            work.start_date = datetime.fromisoformat(work_data.get('start_date')) if work_data.get('start_date') else None
+            work.end_date = datetime.fromisoformat(work_data.get('end_date')) if work_data.get('end_date') else None
         else:
             work = WorkExperience(
                 user_id=user.id,
@@ -1069,15 +1078,14 @@ def delete_user(user_id):
     licenses_certifications_data = data.get('licenses_certifications', [])
     for license_data in licenses_certifications_data:
         license_id = license_data.get('id')
-        if license_id:
-            license = LicenseCertification.query.get(license_id)
-            if license and license.user_id == user.id:
-                license.name = license_data.get('name', license.name)
-                license.issuing_organization = license_data.get('issuing_organization', license.issuing_organization)
-                license.issue_date = datetime.fromisoformat(license_data.get('issue_date')) if license_data.get('issue_date') else None
-                license.expiration_date = datetime.fromisoformat(license_data.get('expiration_date')) if license_data.get('expiration_date') else None
-                license.credentials_id = license_data.get('credentials_id', license.credentials_id)
-                license.credential_url = license_data.get('credential_url', license.credential_url)
+        license = LicenseCertification.query.get(license_id) if license_id else None
+        if license:
+            license.name = license_data.get('name', license.name)
+            license.issuing_organization = license_data.get('issuing_organization', license.issuing_organization)
+            license.issue_date = datetime.fromisoformat(license_data.get('issue_date')) if license_data.get('issue_date') else None
+            license.expiration_date = datetime.fromisoformat(license_data.get('expiration_date')) if license_data.get('expiration_date') else None
+            license.credentials_id = license_data.get('credentials_id', license.credentials_id)
+            license.credential_url = license_data.get('credential_url', license.credential_url)
         else:
             license = LicenseCertification(
                 user_id=user.id,
@@ -1336,26 +1344,26 @@ def send_message():
 def get_all_messages():
     user_id = get_jwt_identity()
     users_only = request.args.get('users_only', 'false').lower() == 'true'
-
+    
     if users_only:
-        # Query for unique users
         chat_users = db.session.query(User).distinct().join(
-            Message, or_(
+            Message,
+            or_(
                 (Message.sender_id == User.id) & (Message.recipient_id == user_id),
                 (Message.recipient_id == User.id) & (Message.sender_id == user_id)
             )
         ).filter(User.id != user_id).all()
-
+        
         users_data = [{
             'id': user.id,
             'full_name': user.full_name,
             'profile_image': user.profile_image
         } for user in chat_users]
-
+        
         return jsonify(users_data), 200
-
-    # Add a return for when `users_only` is False or not provided
+    
     return jsonify({"message": "No users found"}), 200
+
 
 
 @app.route('/messages/<int:other_user_id>', methods=['GET'])
@@ -1380,27 +1388,35 @@ def get_messages(other_user_id):
 
     return jsonify(messages_data), 200
 
-
 @app.route('/chat-users', methods=['GET'])
 @jwt_required()
 def get_chat_users_list():
     current_user_id = get_jwt_identity()
-
-    # Query for users who have exchanged messages with the current user
-    chat_users = db.session.query(User).distinct().join(
-        Message, or_(
-            (Message.sender_id == User.id) & (Message.recipient_id == current_user_id),
-            (Message.recipient_id == User.id) & (Message.sender_id == current_user_id)
+    
+    # Revised query to find users who have exchanged messages
+    chat_users = db.session.query(User).filter(
+        (User.id != current_user_id) & (
+            User.id.in_(
+                db.session.query(Message.sender_id).filter(
+                    Message.recipient_id == current_user_id
+                )
+            ) | 
+            User.id.in_(
+                db.session.query(Message.recipient_id).filter(
+                    Message.sender_id == current_user_id
+                )
+            )
         )
-    ).filter(User.id != current_user_id).all()
-
+    ).distinct().all()
+    
     users_data = [{
         'id': user.id,
         'full_name': user.full_name,
         'profile_image': user.profile_image
     } for user in chat_users]
-
+    
     return jsonify(users_data), 200
+
     # Existing code for full message data
     sent_messages = Message.query.filter_by(sender_id=user_id).all()
     received_messages = Message.query.filter_by(recipient_id=user_id).all()
@@ -1624,15 +1640,15 @@ class Role(db.Model):
     name = db.Column(db.String(100), unique=True, nullable=False)
     admins = db.relationship('Admin', secondary='admin_roles', back_populates='roles')
 
-
 # Instructor model
 class Instructor(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     full_name = db.Column(db.String(100), nullable=False)
     email = db.Column(db.String(100), unique=True, nullable=False)
-    course = db.Column(db.String(100), nullable=False)
     phone = db.Column(db.String(20), nullable=False)
     password = db.Column(db.String(100), nullable=False)
+    profile_image = db.Column(db.String(200), nullable=True)  # Add profile image field
+    courses = db.relationship('Course', backref='instructor', lazy='dynamic')  # Add relationship to courses
 
 # Create initial admin
 @app.route('/create-admin', methods=['POST'])
@@ -1748,14 +1764,12 @@ def get_all_admins():
     admins = Admin.query.all()
     return jsonify([admin.to_dict() for admin in admins]), 200
 
-
 # New endpoint: Fetch all roles
 @app.route('/admin/roles', methods=['GET'])
 @admin_required()
 def get_all_roles():
     roles = Role.query.all()
     return jsonify([{'id': role.id, 'name': role.name} for role in roles]), 200
-
 
 # New endpoint: Delete an admin
 @app.route('/admin/admins/<int:admin_id>', methods=['DELETE'])
@@ -1776,69 +1790,45 @@ def delete_admin(admin_id):
 @jwt_required()
 @admin_required()
 def update_admin_details(admin_id):
-    logging.info(f"Attempting to update admin with ID: {admin_id}")
-    
     try:
         # Verify admin exists
         admin = Admin.query.get(admin_id)
         if not admin:
-            logging.warning(f"Admin not found with ID: {admin_id}")
             return jsonify({'error': 'Admin not found'}), 404
 
-        # Parse JSON data with error handling
-        try:
-            data = request.get_json()
-            if not data:
-                raise BadRequest('No JSON data provided')
-        except BadRequest as e:
-            logging.error(f"Invalid JSON data: {str(e)}")
-            return jsonify({'error': 'Invalid JSON data provided'}), 400
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
 
-        # Validate required fields
-        required_fields = ['username', 'fullname', 'email', 'phone', 'profile_image', 'roles']
-        missing_fields = [field for field in required_fields if field not in data]
-        if missing_fields:
-            logging.warning(f"Missing required fields: {missing_fields}")
-            return jsonify({'error': f'Missing required fields: {", ".join(missing_fields)}'}), 400
-
-        # Update basic fields with validation
-        try:
+        # Update only the fields that are provided
+        if 'username' in data:
             admin.username = data['username']
+        if 'fullname' in data:
             admin.fullname = data['fullname']
+        if 'email' in data:
             admin.email = data['email']
+        if 'phone' in data:
             admin.phone = data['phone']
+        if 'profile_image' in data:
             admin.profile_image = data['profile_image']
-        except (KeyError, TypeError) as e:
-            logging.error(f"Error updating basic fields: {str(e)}")
-            return jsonify({'error': f'Invalid data format for field: {str(e)}'}), 400
-
-        # Update roles with validation
-        new_roles = []
-        for role_id in data['roles']:
-            role = Role.query.get(role_id)
-            if role:
-                new_roles.append(role)
-            else:
-                logging.warning(f"Role not found with ID: {role_id}")
-                return jsonify({'error': f'Role with id {role_id} not found'}), 400
         
-        admin.roles = new_roles
+        # Update roles if provided
+        if 'roles' in data:
+            new_roles = []
+            for role_id in data['roles']:
+                role = Role.query.get(role_id)
+                if role:
+                    new_roles.append(role)
+                else:
+                    return jsonify({'error': f'Role with id {role_id} not found'}), 400
+            admin.roles = new_roles
 
-        # Commit changes with proper error handling
-        try:
-            db.session.commit()
-            logging.info(f"Successfully updated admin with ID: {admin_id}")
-            return jsonify(admin.to_dict()), 200
-        except Exception as e:
-            db.session.rollback()
-            logging.error(f"Database error during commit: {str(e)}")
-            return jsonify({'error': 'Database error occurred'}), 500
+        db.session.commit()
+        return jsonify(admin.to_dict()), 200
 
     except Exception as e:
-        logging.error(f"Unexpected error in update_admin_details: {str(e)}")
-        return jsonify({'error': 'An unexpected error occurred'}), 500
-
-
+        db.session.rollback()
+        return jsonify({'error': f'An error occurred: {str(e)}'}), 500
 
 # New endpoint: Assign role to admin
 @app.route('/admin/assign-role', methods=['POST'])
@@ -1862,9 +1852,7 @@ def assign_role_to_admin():
     
     return jsonify({'message': 'Role assigned to admin successfully'}), 200
 
-
-
-    # New endpoint: Remove role from admin
+# New endpoint: Remove role from admin
 @app.route('/admin/remove-role', methods=['POST'])
 @admin_required()
 def remove_role_from_admin():
@@ -1892,7 +1880,6 @@ def remove_role_from_admin():
 
 
 
-
 # Create instructor
 @app.route('/admin/instructors', methods=['POST'])
 @admin_required()
@@ -1900,11 +1887,11 @@ def create_instructor():
     data = request.get_json()
     full_name = data.get('full_name')
     email = data.get('email')
-    course = data.get('course')
     phone = data.get('phone')
     password = data.get('password')
+    profile_image = data.get('profile_image')  # Add profile image
 
-    if not full_name or not email or not course or not phone or not password:
+    if not full_name or not email or not phone or not password:
         return jsonify({'error': 'All fields are required'}), 400
 
     if Instructor.query.filter_by(email=email).first():
@@ -1912,7 +1899,13 @@ def create_instructor():
 
     hashed_password = generate_password_hash(password, method='pbkdf2:sha256')
 
-    instructor = Instructor(full_name=full_name, email=email, course=course, phone=phone, password=hashed_password)
+    instructor = Instructor(
+        full_name=full_name,
+        email=email,
+        phone=phone,
+        password=hashed_password,
+        profile_image=profile_image  # Add profile image
+    )
     db.session.add(instructor)
     db.session.commit()
 
@@ -1923,13 +1916,39 @@ def create_instructor():
 @admin_required()
 def get_instructors():
     instructors = Instructor.query.all()
-    instructors_data = [{
-        'id': instructor.id,
-        'full_name': instructor.full_name,
-        'email': instructor.email,
-        'course': instructor.course,
-        'phone': instructor.phone
-    } for instructor in instructors]
+    instructors_data = []
+    
+    for instructor in instructors:
+        # Get all courses for this instructor
+        instructor_courses = Course.query.filter_by(instructor_id=instructor.id).all()
+        courses_data = [{
+            'id': course.id,
+            'title': course.title,
+            'course_type': course.course_type,
+            'brief': course.brief,
+            'content': course.content,
+            'image': course.image,
+            'video': course.video,
+            'number_of_modules': course.number_of_modules,
+            'date_created': course.date_created.isoformat() if course.date_created else None,
+            'categories': [category.name for category in course.categories],
+            'modules': [{
+                'id': module.id,
+                'name': module.name,
+                'description': module.description
+            } for module in course.modules]
+        } for course in instructor_courses]
+
+        # Create instructor data dictionary
+        instructor_data = {
+            'id': instructor.id,
+            'full_name': instructor.full_name,
+            'email': instructor.email,
+            'phone': instructor.phone,
+            'profile_image': instructor.profile_image,
+            'courses': courses_data
+        }
+        instructors_data.append(instructor_data)
 
     return jsonify(instructors_data), 200
 
@@ -1945,24 +1964,6 @@ def delete_instructor(instructor_id):
     db.session.commit()
 
     return jsonify({'message': 'Instructor deleted successfully'}), 200
-
-# Instructor login
-@app.route('/instructor/login', methods=['POST'])
-def instructor_login():
-    data = request.get_json()
-    email = data.get('email')
-    password = data.get('password')
-
-    if not email or not password:
-        return jsonify({'error': 'Email and password are required'}), 400
-
-    instructor = Instructor.query.filter_by(email=email).first()
-
-    if not instructor or not check_password_hash(instructor.password, password):
-        return jsonify({'error': 'Invalid credentials'}), 401
-
-    access_token = create_access_token(identity=instructor.id, additional_claims={'is_instructor': True})
-    return jsonify({'access_token': access_token}), 200
 
 # Assign role to user
 @app.route('/admin/assign-role', methods=['POST'])
@@ -2308,6 +2309,321 @@ def chat():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+# View instructor's students endpoint
+@app.route('/instructor/<int:instructor_id>/students', methods=['GET'])
+@jwt_required()
+def view_instructor_students(instructor_id):
+    try:
+        # Get the instructor
+        instructor = Instructor.query.get_or_404(instructor_id)
+        
+        # Get all courses taught by this instructor
+        instructor_courses = instructor.courses.all()
+        
+        # Dictionary to store unique students and their course details
+        students_data = {}
+        
+        # Iterate through each course
+        for course in instructor_courses:
+            # Get enrolled students for this course
+            enrolled_students = course.enrolled_users.all()
+            
+            # Add each student's data
+            for student in enrolled_students:
+                if student.id not in students_data:
+                    # Initialize student data if not already present
+                    students_data[student.id] = {
+                        'student_id': student.id,
+                        'full_name': student.full_name,
+                        'email': student.email,
+                        'phone_number': student.phone_number,
+                        'courses': []
+                    }
+                
+                # Add course information
+                students_data[student.id]['courses'].append({
+                    'course_id': course.id,
+                    'course_title': course.title,
+                    'enrollment_date': None  # You can add enrollment date if you track it
+                })
+        
+        # Convert dictionary to list for response
+        students_list = list(students_data.values())
+        
+        return jsonify({
+            'instructor': {
+                'id': instructor.id,
+                'name': instructor.full_name,
+                'email': instructor.email
+            },
+            'total_students': len(students_list),
+            'students': students_list
+        }), 200
+        
+    except Exception as e:
+        return jsonify({'error': f'An error occurred: {str(e)}'}), 500
+
+# Certificate model
+class Certificate(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    course_id = db.Column(db.Integer, db.ForeignKey('course.id'), nullable=False)
+    certificate_url = db.Column(db.String(500), nullable=False)
+    issue_date = db.Column(db.DateTime, nullable=False, default=datetime.datetime.utcnow)
+    certificate_number = db.Column(db.String(100), unique=True, nullable=False)
+    
+    # Relationships
+    user = db.relationship('User', backref=db.backref('certificates', lazy='dynamic'))
+    course = db.relationship('Course', backref=db.backref('certificates', lazy='dynamic'))
+
+# Generate unique certificate number
+def generate_certificate_number():
+    timestamp = int(time.time())
+    random_num = ''.join([str(random.randint(0, 9)) for _ in range(6)])
+    return f"CERT-{timestamp}-{random_num}"
+
+# Save certificate endpoint
+@app.route('/api/certificates', methods=['POST'])
+@jwt_required()
+def save_certificate():
+    try:
+        user_id = get_jwt_identity()
+        data = request.get_json()
+        
+        # Validate required fields
+        required_fields = ['course_id', 'certificate_url']
+        for field in required_fields:
+            if field not in data:
+                return jsonify({'error': f'Missing required field: {field}'}), 400
+        
+        # Check if course exists
+        course = Course.query.get(data['course_id'])
+        if not course:
+            return jsonify({'error': 'Course not found'}), 404
+        
+        # Check if user has already received a certificate for this course
+        existing_certificate = Certificate.query.filter_by(
+            user_id=user_id,
+            course_id=data['course_id']
+        ).first()
+        
+        if existing_certificate:
+            return jsonify({'error': 'Certificate already exists for this course'}), 400
+        
+        # Generate unique certificate number
+        certificate_number = generate_certificate_number()
+        
+        # Create new certificate
+        new_certificate = Certificate(
+            user_id=user_id,
+            course_id=data['course_id'],
+            certificate_url=data['certificate_url'],
+            certificate_number=certificate_number
+        )
+        
+        db.session.add(new_certificate)
+        db.session.commit()
+        
+        return jsonify({
+            'message': 'Certificate saved successfully',
+            'certificate': {
+                'id': new_certificate.id,
+                'certificate_number': new_certificate.certificate_number,
+                'certificate_url': new_certificate.certificate_url,
+                'issue_date': new_certificate.issue_date.isoformat(),
+                'course_title': course.title
+            }
+        }), 201
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': f'An error occurred: {str(e)}'}), 500
+
+# Get user certificates endpoint
+@app.route('/api/certificates', methods=['GET'])
+@jwt_required()
+def get_user_certificates():
+    try:
+        user_id = get_jwt_identity()
+        
+        certificates = Certificate.query.filter_by(user_id=user_id).all()
+        certificates_data = [{
+            'id': cert.id,
+            'certificate_number': cert.certificate_number,
+            'certificate_url': cert.certificate_url,
+            'issue_date': cert.issue_date.isoformat(),
+            'course_title': cert.course.title
+        } for cert in certificates]
+        
+        return jsonify({
+            'certificates': certificates_data
+        }), 200
+        
+    except Exception as e:
+        return jsonify({'error': f'An error occurred: {str(e)}'}), 500
+
+# Get specific certificate endpoint
+@app.route('/api/certificates/<string:certificate_number>', methods=['GET'])
+def get_certificate(certificate_number):
+    try:
+        certificate = Certificate.query.filter_by(certificate_number=certificate_number).first()
+        
+        if not certificate:
+            return jsonify({'error': 'Certificate not found'}), 404
+        
+        certificate_data = {
+            'id': certificate.id,
+            'certificate_number': certificate.certificate_number,
+            'certificate_url': certificate.certificate_url,
+            'issue_date': certificate.issue_date.isoformat(),
+            'course_title': certificate.course.title,
+            'user_name': certificate.user.full_name
+        }
+        
+        return jsonify(certificate_data), 200
+        
+    except Exception as e:
+        return jsonify({'error': f'An error occurred: {str(e)}'}), 500
+
+# After this existing instructor login endpoint...
+@app.route('/instructor/students', methods=['GET'])
+@jwt_required()
+def get_instructor_students():
+    # Get instructor ID from JWT token
+    instructor_id = get_jwt_identity()
+    
+    try:
+        # Verify instructor exists
+        instructor = Instructor.query.get(instructor_id)
+        if not instructor:
+            return jsonify({'error': 'Instructor not found'}), 404
+
+        # Get all courses taught by this instructor
+        instructor_courses = Course.query.filter_by(instructor_id=instructor_id).all()
+        
+        # Get all students enrolled in these courses
+        students_data = []
+        seen_students = set()  # To avoid duplicate students
+        
+        for course in instructor_courses:
+            for student in course.enrolled_users:
+                if student.id not in seen_students:
+                    seen_students.add(student.id)
+                    
+                    # Get student's progress in this course
+                    # You might want to add a progress tracking system
+                    
+                    student_data = {
+                        'id': student.id,
+                        'full_name': student.full_name,
+                        'email': student.email,
+                        'profile_image': student.profile_image,
+                        'enrolled_courses': [{
+                            'id': c.id,
+                            'title': c.title,
+                            'enrollment_date': datetime.datetime.utcnow().isoformat()  # You might want to store actual enrollment dates
+                        } for c in student.enrolled_courses if c.instructor_id == instructor_id],
+                        'location': {
+                            'country_region': student.location.country_region if student.location else None,
+                            'city': student.location.city if student.location else None
+                        }
+                    }
+                    students_data.append(student_data)
+        
+        return jsonify({
+            'total_students': len(students_data),
+            'students': students_data
+        }), 200
+
+    except Exception as e:
+        return jsonify({'error': f'An error occurred: {str(e)}'}), 500
+
+@app.route('/instructor/students/<int:student_id>', methods=['GET'])
+@jwt_required()
+def get_student_details(student_id):
+    instructor_id = get_jwt_identity()
+    
+    try:
+        # Verify instructor exists
+        instructor = Instructor.query.get(instructor_id)
+        if not instructor:
+            return jsonify({'error': 'Instructor not found'}), 404
+
+        # Get the student
+        student = User.query.get(student_id)
+        if not student:
+            return jsonify({'error': 'Student not found'}), 404
+
+        # Verify that this student is enrolled in one of the instructor's courses
+        instructor_courses = Course.query.filter_by(instructor_id=instructor_id).all()
+        student_courses = [c for c in student.enrolled_courses if c in instructor_courses]
+        
+        if not student_courses:
+            return jsonify({'error': 'Student is not enrolled in any of your courses'}), 403
+
+        # Compile detailed student information
+        student_data = {
+            'id': student.id,
+            'full_name': student.full_name,
+            'email': student.email,
+            'profile_image': student.profile_image,
+            'bio': student.bio,
+            'phone_number': student.phone_number,
+            'location': {
+                'country_region': student.location.country_region if student.location else None,
+                'city': student.location.city if student.location else None
+            },
+            'education': [{
+                'school': edu.school,
+                'degree': edu.degree,
+                'field_of_study': edu.field_of_study,
+                'start_date': edu.start_date.isoformat() if edu.start_date else None,
+                'end_date': edu.end_date.isoformat() if edu.end_date else None
+            } for edu in student.education],
+            'enrolled_courses': [{
+                'id': course.id,
+                'title': course.title,
+                'enrollment_date': datetime.datetime.utcnow().isoformat(),  # You might want to store actual enrollment dates
+                'progress': 0  # You might want to add a progress tracking system
+            } for course in student_courses]
+        }
+
+        return jsonify(student_data), 200
+
+    except Exception as e:
+        return jsonify({'error': f'An error occurred: {str(e)}'}), 500
+
+@app.route('/instructor/courses/<int:course_id>/students', methods=['GET'])
+@jwt_required()
+def get_course_students(course_id):
+    instructor_id = get_jwt_identity()
+    
+    try:
+        # Verify instructor exists and owns the course
+        course = Course.query.filter_by(id=course_id, instructor_id=instructor_id).first()
+        if not course:
+            return jsonify({'error': 'Course not found or you do not have permission to view it'}), 404
+
+        # Get all students enrolled in this course
+        students_data = [{
+            'id': student.id,
+            'full_name': student.full_name,
+            'email': student.email,
+            'profile_image': student.profile_image,
+            'enrollment_date': datetime.datetime.utcnow().isoformat(),  # You might want to store actual enrollment dates
+            'progress': 0  # You might want to add a progress tracking system
+        } for student in course.enrolled_users]
+
+        return jsonify({
+            'course_id': course_id,
+            'course_title': course.title,
+            'total_students': len(students_data),
+            'students': students_data
+        }), 200
+
+    except Exception as e:
+        return jsonify({'error': f'An error occurred: {str(e)}'}), 500
+
 
 
 
@@ -2317,4 +2633,3 @@ if __name__ == '__main__':
     with app.app_context():
         db.create_all()
     app.run(debug=True)
-
