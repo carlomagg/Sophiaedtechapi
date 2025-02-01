@@ -641,6 +641,23 @@ def refresh():
     new_access_token = create_access_token(identity=current_user, expires_delta=timedelta(hours=1))
     return jsonify({'access_token': new_access_token}), 200
 
+# Instructor login endpoint
+@app.route('/instructor/login', methods=['POST'])
+def instructor_login():
+    data = request.get_json()
+    email = data.get('email')
+    password = data.get('password')
+
+    if not email or not password:
+        return jsonify({'message': 'Email and password are required'}), 400
+
+    instructor = Instructor.query.filter_by(email=email).first()
+    if not instructor or not check_password_hash(instructor.password, password):
+        return jsonify({'message': 'Invalid credentials'}), 401
+
+    access_token = create_access_token(identity=instructor.id, additional_claims={'is_instructor': True})
+    return jsonify({'access_token': access_token}), 200
+
 # Profile starts here
 @app.route('/profile', methods=['GET', 'PUT'])
 @jwt_required()
