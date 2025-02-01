@@ -1248,7 +1248,7 @@ def get_blogs():
         'category': blog.category,
         'minutes_read': blog.minutes_read,
         'author': blog.author.full_name if blog.author else 'Unknown',
-        'author_profile_image': blog.author.profile_image if blog.author else None,  # Updated this line
+        'author_profile_image': blog.author.profile_image if blog.author else None,
         'date_created': blog.date_created
     } for blog in blogs]
     return jsonify(blogs_data), 200
@@ -1893,6 +1893,39 @@ def remove_role_from_admin():
     else:
         return jsonify({'error': 'Admin does not have this role'}), 400
 
+# Admin profile endpoint
+@app.route('/admin/profile', methods=['GET', 'PUT'])
+@jwt_required()
+@admin_required()
+def admin_profile():
+    admin_id = get_jwt_identity()
+    admin = Admin.query.get(admin_id)
+    if not admin:
+        return jsonify({'error': 'Admin not found'}), 404
+
+    if request.method == 'GET':
+        admin_data = {
+            'id': admin.id,
+            'username': admin.username,
+            'fullname': admin.fullname,
+            'email': admin.email,
+            'phone': admin.phone,
+            'profile_image': admin.profile_image,
+            'roles': [{'id': role.id, 'name': role.name} for role in admin.roles]
+        }
+        return jsonify(admin_data), 200
+
+    if request.method == 'PUT':
+        data = request.get_json()
+        admin.username = data.get('username', admin.username)
+        admin.fullname = data.get('fullname', admin.fullname)
+        admin.email = data.get('email', admin.email)
+        admin.phone = data.get('phone', admin.phone)
+        admin.profile_image = data.get('profile_image', admin.profile_image)
+
+        db.session.commit()
+        return jsonify({'message': 'Admin profile updated successfully'}), 200
+
 
 
 
@@ -2363,7 +2396,6 @@ def view_instructor_students(instructor_id):
                     'course_title': course.title,
                     'enrollment_date': None  # You can add enrollment date if you track it
                 })
-        
         # Convert dictionary to list for response
         students_list = list(students_data.values())
         
@@ -2374,7 +2406,13 @@ def view_instructor_students(instructor_id):
                 'email': instructor.email
             },
             'total_students': len(students_list),
-            'students': students_list
+            'students': [{
+                'student_id': student['student_id'],
+                'full_name': student['full_name'],
+                'email': student['email'],
+                'phone_number': student['phone_number'],
+                 'courses': student['courses']
+            } for student in students_list]
         }), 200
         
     except Exception as e:
