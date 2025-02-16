@@ -1,0 +1,5 @@
+0000000000000000000000000000000000000000 78d88af8d841d2d3fb05f017b2c4a3085e757e8f unknown <DELL@DESKTOP-5GAING6.(none)> 1730383637 +0100	clone: from https://github.com/carlomagg/Sophiaedtechapi.git
+78d88af8d841d2d3fb05f017b2c4a3085e757e8f f9c73dfcb7aa59a7f49de334f156ff40fdbf65a0 carlomagg <obijurumagnus@gmail.com> 1730709418 +0100	commit: admin put!
+f9c73dfcb7aa59a7f49de334f156ff40fdbf65a0 3a17d6c2d863acdcad5947db4bb63970a82c45ba carlomagg <obijurumagnus@gmail.com> 1733293789 +0100	commit: new endpoint
+3a17d6c2d863acdcad5947db4bb63970a82c45ba c75e668863d519f74e46f915b2bc0729c7dccb86 carlomagg <obijurumagnus@gmail.com> 1738388630 +0100	commit: implement instructor login
+c75e668863d519f74e46f915b2bc0729c7dccb86 08d7489342b3b6615eb3684856063531e4a1818c carlomagg <obijurumagnus@gmail.com> 1738390166 +0100	commit: New endpoint

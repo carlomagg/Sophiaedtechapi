@@ -1,0 +1,1385 @@
+{
+	"info": {
+		"_postman_id": "e5e9e7d3-4b4c-4b4b-8f8f-3f3f3f3f3f3f",
+		"name": "Sophia EdTech API",
+		"description": "API collection for Sophia EdTech platform",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Authentication",
+			"item": [
+				{
+					"name": "User Register",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"full_name\": \"John Doe\",\n    \"email\": \"john@example.com\",\n    \"password\": \"SecurePass123!\",\n    \"confirm_password\": \"SecurePass123!\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/register",
+							"host": ["{{base_url}}"],
+							"path": ["register"]
+						}
+					}
+				},
+				{
+					"name": "User Login",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"email\": \"john@example.com\",\n    \"password\": \"SecurePass123!\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/login",
+							"host": ["{{base_url}}"],
+							"path": ["login"]
+						}
+					}
+				},
+				{
+					"name": "Create Admin",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"username\": \"admin123\",\n    \"password\": \"AdminPass123!\",\n    \"fullname\": \"Admin User\",\n    \"email\": \"admin@example.com\",\n    \"phone\": \"+1234567890\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/create-admin",
+							"host": ["{{base_url}}"],
+							"path": ["create-admin"]
+						}
+					}
+				},
+				{
+					"name": "Admin Login",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"username\": \"admin123\",\n    \"password\": \"AdminPass123!\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/admin/login",
+							"host": ["{{base_url}}"],
+							"path": ["admin", "login"]
+						}
+					}
+				},
+				{
+					"name": "Instructor Login",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"email\": \"instructor@example.com\",\n    \"password\": \"InstructorPass123!\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/instructor/login",
+							"host": ["{{base_url}}"],
+							"path": ["instructor", "login"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Admin Management",
+			"item": [
+				{
+					"name": "Get All Admins",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{admin_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/admin/admins",
+							"host": ["{{base_url}}"],
+							"path": ["admin", "admins"]
+						}
+					}
+				},
+				{
+					"name": "Delete Admin",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{admin_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/admin/admins/1",
+							"host": ["{{base_url}}"],
+							"path": ["admin", "admins", "1"]
+						}
+					}
+				},
+				{
+					"name": "Update Admin",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{admin_token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"username\": \"updated_admin\",\n    \"fullname\": \"Updated Admin Name\",\n    \"email\": \"updated@example.com\",\n    \"phone\": \"+1987654321\",\n    \"roles\": [1, 2]\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/admin/update/1",
+							"host": ["{{base_url}}"],
+							"path": ["admin", "update", "1"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Course Management",
+			"item": [
+				{
+					"name": "Create Course",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_token}}"
+							}
+						],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "course_category",
+									"value": "Programming",
+									"type": "text"
+								},
+								{
+									"key": "course_type",
+									"value": "Beginner",
+									"type": "text"
+								},
+								{
+									"key": "course_name",
+									"value": "Python Basics",
+									"type": "text"
+								},
+								{
+									"key": "course_title",
+									"value": "Introduction to Python",
+									"type": "text"
+								},
+								{
+									"key": "brief",
+									"value": "Learn Python programming from scratch",
+									"type": "text"
+								},
+								{
+									"key": "number_of_modules",
+									"value": "3",
+									"type": "text"
+								},
+								{
+									"key": "additional_resources",
+									"type": "file",
+									"src": "/path/to/resources.pdf"
+								},
+								{
+									"key": "media_file",
+									"type": "file",
+									"src": "/path/to/course_image.jpg"
+								}
+							]
+						},
+						"url": {
+							"raw": "{{base_url}}/courses",
+							"host": ["{{base_url}}"],
+							"path": ["courses"]
+						}
+					}
+				},
+				{
+					"name": "Get All Courses",
+					"request": {
+						"method": "GET",
+						"url": {
+							"raw": "{{base_url}}/courses",
+							"host": ["{{base_url}}"],
+							"path": ["courses"]
+						}
+					}
+				},
+				{
+					"name": "Get Course by ID",
+					"request": {
+						"method": "GET",
+						"url": {
+							"raw": "{{base_url}}/courses/1",
+							"host": ["{{base_url}}"],
+							"path": ["courses", "1"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Instructor Management",
+			"item": [
+				{
+					"name": "Create Instructor",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{admin_token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"full_name\": \"John Instructor\",\n    \"email\": \"instructor@example.com\",\n    \"phone\": \"+1234567890\",\n    \"password\": \"InstructorPass123!\",\n    \"profile_image\": \"https://example.com/profile.jpg\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/admin/instructors",
+							"host": ["{{base_url}}"],
+							"path": ["admin", "instructors"]
+						}
+					}
+				},
+				{
+					"name": "Get All Instructors",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{admin_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/admin/instructors",
+							"host": ["{{base_url}}"],
+							"path": ["admin", "instructors"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "User Profile",
+			"item": [
+				{
+					"name": "Get Profile",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/profile",
+							"host": ["{{base_url}}"],
+							"path": ["profile"]
+						}
+					}
+				},
+				{
+					"name": "Update Profile",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"full_name\": \"Updated Name\",\n    \"bio\": \"Updated bio\",\n    \"phone_number\": \"+1987654321\",\n    \"location\": {\n        \"country_region\": \"United States\",\n        \"city\": \"New York\"\n    }\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/profile",
+							"host": ["{{base_url}}"],
+							"path": ["profile"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Certificate Management",
+			"item": [
+				{
+					"name": "Save Certificate",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"course_id\": 1,\n    \"certificate_url\": \"https://example.com/certificate.pdf\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/certificates",
+							"host": ["{{base_url}}"],
+							"path": ["api", "certificates"]
+						}
+					}
+				},
+				{
+					"name": "Get User Certificates",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/certificates",
+							"host": ["{{base_url}}"],
+							"path": ["api", "certificates"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Blog Management",
+			"item": [
+				{
+					"name": "Create Blog Post",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"title\": \"Sample Blog Post\",\n    \"subheading\": \"A detailed guide\",\n    \"featured_image\": \"https://example.com/image.jpg\",\n    \"content\": \"Blog content here\",\n    \"category\": \"Technology\",\n    \"minutes_read\": 5\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/blogs",
+							"host": ["{{base_url}}"],
+							"path": ["blogs"]
+						}
+					}
+				},
+				{
+					"name": "Get All Blogs",
+					"request": {
+						"method": "GET",
+						"url": {
+							"raw": "{{base_url}}/blogs",
+							"host": ["{{base_url}}"],
+							"path": ["blogs"]
+						}
+					}
+				},
+				{
+					"name": "Get Blog by ID",
+					"request": {
+						"method": "GET",
+						"url": {
+							"raw": "{{base_url}}/blogs/1",
+							"host": ["{{base_url}}"],
+							"path": ["blogs", "1"]
+						}
+					}
+				},
+				{
+					"name": "Update Blog",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"title\": \"Updated Blog Post\",\n    \"content\": \"Updated content\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/blogs/1",
+							"host": ["{{base_url}}"],
+							"path": ["blogs", "1"]
+						}
+					}
+				},
+				{
+					"name": "Delete Blog",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/blogs/1",
+							"host": ["{{base_url}}"],
+							"path": ["blogs", "1"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Messaging System",
+			"item": [
+				{
+					"name": "Send Message",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"recipient_id\": 1,\n    \"content\": \"Hello!\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/messages",
+							"host": ["{{base_url}}"],
+							"path": ["messages"]
+						}
+					}
+				},
+				{
+					"name": "Get All Messages",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/messages",
+							"host": ["{{base_url}}"],
+							"path": ["messages"]
+						}
+					}
+				},
+				{
+					"name": "Get Messages with User",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/messages/1",
+							"host": ["{{base_url}}"],
+							"path": ["messages", "1"]
+						}
+					}
+				},
+				{
+					"name": "Mark Message as Read",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/messages/1/read",
+							"host": ["{{base_url}}"],
+							"path": ["messages", "1", "read"]
+						}
+					}
+				},
+				{
+					"name": "Get Chat Users",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/chat-users",
+							"host": ["{{base_url}}"],
+							"path": ["chat-users"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Peer Review",
+			"item": [
+				{
+					"name": "Upload Peer Review",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_token}}"
+							}
+						],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "file",
+									"type": "file",
+									"src": "/path/to/document.pdf"
+								},
+								{
+									"key": "course_id",
+									"value": "1",
+									"type": "text"
+								}
+							]
+						},
+						"url": {
+							"raw": "{{base_url}}/peer-review/upload",
+							"host": ["{{base_url}}"],
+							"path": ["peer-review", "upload"]
+						}
+					}
+				},
+				{
+					"name": "Get Available Reviews",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/peer-review/available/1",
+							"host": ["{{base_url}}"],
+							"path": ["peer-review", "available", "1"]
+						}
+					}
+				},
+				{
+					"name": "Download Review Document",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/peer-review/download/1",
+							"host": ["{{base_url}}"],
+							"path": ["peer-review", "download", "1"]
+						}
+					}
+				},
+				{
+					"name": "Submit Review",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"remarks\": \"Good work!\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/peer-review/submit/1",
+							"host": ["{{base_url}}"],
+							"path": ["peer-review", "submit", "1"]
+						}
+					}
+				},
+				{
+					"name": "Get My Submissions",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/peer-review/my-submissions",
+							"host": ["{{base_url}}"],
+							"path": ["peer-review", "my-submissions"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Instructor Features",
+			"item": [
+				{
+					"name": "Get Instructor Students",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{instructor_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/instructor/students",
+							"host": ["{{base_url}}"],
+							"path": ["instructor", "students"]
+						}
+					}
+				},
+				{
+					"name": "Get Student Details",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{instructor_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/instructor/students/1",
+							"host": ["{{base_url}}"],
+							"path": ["instructor", "students", "1"]
+						}
+					}
+				},
+				{
+					"name": "Get Course Students",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{instructor_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/instructor/courses/1/students",
+							"host": ["{{base_url}}"],
+							"path": ["instructor", "courses", "1", "students"]
+						}
+					}
+				},
+				{
+					"name": "Rate Instructor",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"rating\": 5,\n    \"review\": \"Excellent instructor!\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/instructors/1/rate",
+							"host": ["{{base_url}}"],
+							"path": ["instructors", "1", "rate"]
+						}
+					}
+				},
+				{
+					"name": "Get Instructor Ratings",
+					"request": {
+						"method": "GET",
+						"url": {
+							"raw": "{{base_url}}/instructors/1/ratings",
+							"host": ["{{base_url}}"],
+							"path": ["instructors", "1", "ratings"]
+						}
+					}
+				},
+				{
+					"name": "Submit Verification",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{instructor_token}}"
+							}
+						],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "document",
+									"type": "file",
+									"src": "/path/to/document.pdf"
+								},
+								{
+									"key": "document_type",
+									"value": "certificate",
+									"type": "text"
+								}
+							]
+						},
+						"url": {
+							"raw": "{{base_url}}/instructors/1/verify",
+							"host": ["{{base_url}}"],
+							"path": ["instructors", "1", "verify"]
+						}
+					}
+				},
+				{
+					"name": "Process Verification (Admin)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{admin_token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"action\": \"approve\",\n    \"reason\": \"Documents verified successfully\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/admin/instructors/1/verify",
+							"host": ["{{base_url}}"],
+							"path": ["admin", "instructors", "1", "verify"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Course Additional Features",
+			"item": [
+				{
+					"name": "Enroll in Course",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/courses/1/enroll",
+							"host": ["{{base_url}}"],
+							"path": ["courses", "1", "enroll"]
+						}
+					}
+				},
+				{
+					"name": "Upload Course Video",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_token}}"
+							}
+						],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "file",
+									"type": "file",
+									"src": "/path/to/video.mp4"
+								}
+							]
+						},
+						"url": {
+							"raw": "{{base_url}}/upload_course_video/1",
+							"host": ["{{base_url}}"],
+							"path": ["upload_course_video", "1"]
+						}
+					}
+				},
+				{
+					"name": "Follow Course",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/follow_course/1",
+							"host": ["{{base_url}}"],
+							"path": ["follow_course", "1"]
+						}
+					}
+				},
+				{
+					"name": "Unfollow Course",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/unfollow_course/1",
+							"host": ["{{base_url}}"],
+							"path": ["unfollow_course", "1"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "User Posts",
+			"item": [
+				{
+					"name": "Create Post",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_token}}"
+							}
+						],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "title",
+									"value": "My Research Post",
+									"type": "text"
+								},
+								{
+									"key": "executive_summary",
+									"value": "Summary of research",
+									"type": "text"
+								},
+								{
+									"key": "subject",
+									"value": "Computer Science",
+									"type": "text"
+								},
+								{
+									"key": "document",
+									"type": "file",
+									"src": "/path/to/document.pdf"
+								}
+							]
+						},
+						"url": {
+							"raw": "{{base_url}}/user/posts",
+							"host": ["{{base_url}}"],
+							"path": ["user", "posts"]
+						}
+					}
+				},
+				{
+					"name": "Get User Posts",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/user/posts",
+							"host": ["{{base_url}}"],
+							"path": ["user", "posts"]
+						}
+					}
+				},
+				{
+					"name": "Get Post by ID",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/user/posts/1",
+							"host": ["{{base_url}}"],
+							"path": ["user", "posts", "1"]
+						}
+					}
+				},
+				{
+					"name": "Get Followed Posts",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/user/followed_posts",
+							"host": ["{{base_url}}"],
+							"path": ["user", "followed_posts"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Notifications",
+			"item": [
+				{
+					"name": "Create Notification",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"content\": \"New notification message\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/notifications",
+							"host": ["{{base_url}}"],
+							"path": ["notifications"]
+						}
+					}
+				},
+				{
+					"name": "Get Notifications",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/notifications",
+							"host": ["{{base_url}}"],
+							"path": ["notifications"]
+						}
+					}
+				},
+				{
+					"name": "Mark Notification as Read",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/notifications/1/read",
+							"host": ["{{base_url}}"],
+							"path": ["notifications", "1", "read"]
+						}
+					}
+				},
+				{
+					"name": "Delete Notification",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/notifications/1",
+							"host": ["{{base_url}}"],
+							"path": ["notifications", "1"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Profile Additional Features",
+			"item": [
+				{
+					"name": "Add Experience",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"company\": \"Tech Corp\",\n    \"role_title\": \"Software Engineer\",\n    \"job_description\": \"Development work\",\n    \"start_date\": \"2023-01-01\",\n    \"end_date\": \"2024-01-01\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/user/experience",
+							"host": ["{{base_url}}"],
+							"path": ["user", "experience"]
+						}
+					}
+				},
+				{
+					"name": "Delete Experience",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/user/experience?id=1",
+							"host": ["{{base_url}}"],
+							"path": ["user", "experience"],
+							"query": [
+								{
+									"key": "id",
+									"value": "1"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Add Education",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"school\": \"University Name\",\n    \"degree\": \"Bachelor's\",\n    \"field_of_study\": \"Computer Science\",\n    \"start_date\": \"2020-09-01\",\n    \"end_date\": \"2024-06-01\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/user/education",
+							"host": ["{{base_url}}"],
+							"path": ["user", "education"]
+						}
+					}
+				},
+				{
+					"name": "Delete Education",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/user/education?id=1",
+							"host": ["{{base_url}}"],
+							"path": ["user", "education"],
+							"query": [
+								{
+									"key": "id",
+									"value": "1"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Upload Profile Image",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_token}}"
+							}
+						],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "file",
+									"type": "file",
+									"src": "/path/to/profile.jpg"
+								}
+							]
+						},
+						"url": {
+							"raw": "{{base_url}}/upload_profile_image",
+							"host": ["{{base_url}}"],
+							"path": ["upload_profile_image"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Category Management",
+			"item": [
+				{
+					"name": "Create Category",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{admin_token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"name\": \"New Category\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/categories",
+							"host": ["{{base_url}}"],
+							"path": ["categories"]
+						}
+					}
+				},
+				{
+					"name": "Get Categories",
+					"request": {
+						"method": "GET",
+						"url": {
+							"raw": "{{base_url}}/categories",
+							"host": ["{{base_url}}"],
+							"path": ["categories"]
+						}
+					}
+				},
+				{
+					"name": "Update Category",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{admin_token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"name\": \"Updated Category Name\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/categories/1",
+							"host": ["{{base_url}}"],
+							"path": ["categories", "1"]
+						}
+					}
+				},
+				{
+					"name": "Delete Category",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{admin_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/categories/1",
+							"host": ["{{base_url}}"],
+							"path": ["categories", "1"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "ChatGPT Integration",
+			"item": [
+				{
+					"name": "Chat with AI",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"message\": \"What is machine learning?\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/chat",
+							"host": ["{{base_url}}"],
+							"path": ["api", "chat"]
+						}
+					}
+				}
+			]
+		}
+	],
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://localhost:5000"
+		},
+		{
+			"key": "user_token",
+			"value": "your_user_jwt_token_here"
+		},
+		{
+			"key": "admin_token",
+			"value": "your_admin_jwt_token_here"
+		},
+		{
+			"key": "instructor_token",
+			"value": "your_instructor_jwt_token_here"
+		}
+	]
+} 
