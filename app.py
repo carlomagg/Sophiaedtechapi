@@ -185,8 +185,13 @@ class Course(db.Model):
 class Module(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
+    title = db.Column(db.String(200), nullable=True)
     description = db.Column(db.Text, nullable=True)
+    content = db.Column(db.Text, nullable=True)
     course_id = db.Column(db.Integer, db.ForeignKey('course.id'), nullable=False)
+    order = db.Column(db.Integer, nullable=False)  # To maintain module order (1/3, 2/3, etc.)
+    additional_resources = db.Column(db.String(200), nullable=True)
+    media_file = db.Column(db.String(200), nullable=True)
 
 # CourseCategory model
 class CourseCategory(db.Model):
@@ -212,108 +217,115 @@ enrollment_table = db.Table('enrollment',
 @app.route('/courses', methods=['POST'])
 @jwt_required()
 def create_course():
-    author_id = get_jwt_identity()
-    
-    # Handle file uploads first
-    additional_resources = None
-    course_image = None
-    course_video = None
-    
-    if 'additional_resources' in request.files:
-        file = request.files['additional_resources']
-        if file and file.filename != '':
-            # Validate file size (20MB max)
-            if len(file.read()) > 20 * 1024 * 1024:
-                return jsonify({'error': 'Additional resources file size must be less than 20MB'}), 400
-            file.seek(0)  # Reset file pointer after reading
+    try:
+        author_id = get_jwt_identity()
+        
+        # Get form data
+        data = request.form
+        
+        # Validate required fields for course creation
+        required_fields = ['course_category', 'course_type', 'course_name', 'course_title', 'brief', 'number_of_modules']
+        for field in required_fields:
+            if not data.get(field):
+                return jsonify({'error': f'{field} is required'}), 400
+        
+        # Create course
+        course = Course(
+            title=data.get('course_title'),
+            course_name=data.get('course_name'),
+            content=data.get('body', ''),
+            brief=data.get('brief'),
+            number_of_modules=int(data.get('number_of_modules', 0)),
+            course_type=data.get('course_type'),
+            author_id=author_id,
+            status='draft'
+        )
+        
+        # Add category
+        category_name = data.get('course_category')
+        category = CourseCategory.query.filter_by(name=category_name).first()
+        if not category:
+            category = CourseCategory(name=category_name)
+            db.session.add(category)
+        course.categories.append(category)
+        
+        # Handle modules
+        number_of_modules = int(data.get('number_of_modules', 0))
+        for i in range(number_of_modules):
+            module_number = i + 1
             
-            # Validate file type
-            allowed_extensions = {'pdf', 'docx', 'ppt', 'xl'}
-            if not file.filename.split('.')[-1].lower() in allowed_extensions:
-                return jsonify({'error': 'Invalid file type for additional resources'}), 400
-                
-            filename = secure_filename(file.filename)
-            file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-            file.save(file_path)
-            additional_resources = file_path
-    
-    if 'media_file' in request.files:
-        file = request.files['media_file']
-        if file and file.filename != '':
-            # Validate file size (20MB max)
-            if len(file.read()) > 20 * 1024 * 1024:
-                return jsonify({'error': 'Media file size must be less than 20MB'}), 400
-            file.seek(0)
+            # Handle module files
+            module_additional_resources = None
+            module_media_file = None
             
-            # Check if it's an image or video
-            filename = secure_filename(file.filename)
-            if filename.split('.')[-1].lower() in {'jpg', 'jpeg', 'png', 'gif'}:
-                # Handle image upload (500x500)
-                try:
-                    img = Image.open(file)
-                    img = img.resize((500, 500))
-                    file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-                    img.save(file_path)
-                    course_image = file_path
-                except Exception as e:
-                    return jsonify({'error': f'Error processing image: {str(e)}'}), 400
-            else:
-                # Handle video upload
-                file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-                file.save(file_path)
-                course_video = file_path
-    
-    # Get form data
-    data = request.form
-    
-    # Validate required fields
-    required_fields = ['course_category', 'course_type', 'course_name', 'course_title', 'brief', 'number_of_modules']
-    for field in required_fields:
-        if not data.get(field):
-            return jsonify({'error': f'{field} is required'}), 400
-    
-    # Create course
-    course = Course(
-        title=data.get('course_title'),
-        course_name=data.get('course_name'),
-        image=course_image,
-        video=course_video,
-        content=data.get('body', ''),
-        brief=data.get('brief'),
-        number_of_modules=int(data.get('number_of_modules', 0)),
-        course_type=data.get('course_type'),
-        additional_resources=additional_resources,
-        author_id=author_id,
-        status='draft'
-    )
-    
-    # Add category
-    category_name = data.get('course_category')
-    category = CourseCategory.query.filter_by(name=category_name).first()
-    if not category:
-        category = CourseCategory(name=category_name)
-        db.session.add(category)
-    course.categories.append(category)
-    
-    # Add modules
-    for i in range(int(data.get('number_of_modules', 0))):
-        module_description = data.get(f'module_{i+1}_description')
-        if module_description:
+            # Handle additional resources for this module
+            resource_key = f'module_{module_number}_additional_resources'
+            if resource_key in request.files:
+                resource_file = request.files[resource_key]
+                if resource_file and resource_file.filename != '':
+                    # Validate file size (20MB max)
+                    if len(resource_file.read()) > 20 * 1024 * 1024:
+                        return jsonify({'error': f'Module {module_number} additional resources file size must be less than 20MB'}), 400
+                    resource_file.seek(0)
+                    
+                    # Validate file type
+                    allowed_extensions = {'pdf', 'docx', 'ppt', 'xl'}
+                    if not resource_file.filename.split('.')[-1].lower() in allowed_extensions:
+                        return jsonify({'error': f'Invalid file type for module {module_number} additional resources'}), 400
+                    
+                    filename = secure_filename(resource_file.filename)
+                    file_path = os.path.join(app.config['UPLOAD_FOLDER'], f'module_{module_number}_{filename}')
+                    resource_file.save(file_path)
+                    module_additional_resources = file_path
+            
+            # Handle media file for this module
+            media_key = f'module_{module_number}_media'
+            if media_key in request.files:
+                media_file = request.files[media_key]
+                if media_file and media_file.filename != '':
+                    # Validate file size (20MB max)
+                    if len(media_file.read()) > 20 * 1024 * 1024:
+                        return jsonify({'error': f'Module {module_number} media file size must be less than 20MB'}), 400
+                    media_file.seek(0)
+                    
+                    filename = secure_filename(media_file.filename)
+                    if filename.split('.')[-1].lower() in {'jpg', 'jpeg', 'png', 'gif'}:
+                        # Handle image upload (500x500)
+                        try:
+                            img = Image.open(media_file)
+                            img = img.resize((500, 500))
+                            file_path = os.path.join(app.config['UPLOAD_FOLDER'], f'module_{module_number}_{filename}')
+                            img.save(file_path)
+                            module_media_file = file_path
+                        except Exception as e:
+                            return jsonify({'error': f'Error processing image for module {module_number}: {str(e)}'}), 400
+                    else:
+                        # Handle video upload
+                        file_path = os.path.join(app.config['UPLOAD_FOLDER'], f'module_{module_number}_{filename}')
+                        media_file.save(file_path)
+                        module_media_file = file_path
+            
+            # Create module
             module = Module(
-                name=f'Module {i+1}',
-                description=module_description,
-                course=course
+                name=f'Module {module_number}',
+                title=data.get(f'module_{module_number}_title'),
+                description=data.get(f'module_{module_number}_description'),
+                content=data.get(f'module_{module_number}_content'),
+                course_id=course.id,
+                order=module_number,
+                additional_resources=module_additional_resources,
+                media_file=module_media_file
             )
             db.session.add(module)
-    
-    db.session.add(course)
-    
-    try:
+        
+        db.session.add(course)
         db.session.commit()
+        
         return jsonify({
             'message': 'Course created successfully',
             'course_id': course.id
         }), 201
+        
     except Exception as e:
         db.session.rollback()
         return jsonify({'error': f'Failed to create course: {str(e)}'}), 500
@@ -404,8 +416,12 @@ def update_course(course_id):
         for module_data in data['modules']:
             module = Module(
                 name=module_data.get('name'),
+                description=module_data.get('description'),
                 content=module_data.get('content'),
-                order=module_data.get('order')
+                course_id=course.id,
+                order=module_data.get('order'),
+                additional_resources=module_data.get('additional_resources'),
+                media_file=module_data.get('media_file')
             )
             course.modules.append(module)
 
