@@ -531,11 +531,28 @@ def create_module():
     name = data.get('name')
     description = data.get('description')
     course_id = data.get('course_id')
+    title = data.get('title')
+    content = data.get('content')
+    additional_resources = data.get('additional_resources')
+    media_file = data.get('media_file')
 
     if not name or not course_id:
         return jsonify({'error': 'Module name and course ID are required'}), 400
 
-    module = Module(name=name, description=description, course_id=course_id)
+    # Get the current highest order number for the course
+    highest_order = db.session.query(func.max(Module.order)).filter(Module.course_id == course_id).scalar()
+    new_order = 1 if highest_order is None else highest_order + 1
+
+    module = Module(
+        name=name,
+        description=description,
+        course_id=course_id,
+        title=title,
+        content=content,
+        order=new_order,
+        additional_resources=additional_resources,
+        media_file=media_file
+    )
     db.session.add(module)
     
     course = Course.query.get(course_id)
