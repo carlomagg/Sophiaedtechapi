@@ -3,7 +3,6 @@ from datetime import timedelta
 from flask import Flask, request, jsonify
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash
-from werkzeug.security import generate_password_hash, check_password_hash
 from flask_jwt_extended import JWTManager, create_access_token, create_refresh_token, jwt_required, get_jwt_identity, get_jwt
 from functools import wraps
 from flask_sqlalchemy import SQLAlchemy 
@@ -49,8 +48,6 @@ jwt = JWTManager(app)
 openai.api_key = os.getenv('OPENAI_API_KEY')
 
 db = SQLAlchemy(app)
-
-
 
 #follow
 course_followers = db.Table('course_followers',
@@ -98,10 +95,6 @@ class User(db.Model):
     
     def __repr__(self):
         return f'<User {self.email}>'
-
-
-ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
-
 
 # Location model
 class Location(db.Model):
@@ -389,8 +382,6 @@ def update_course(course_id):
         return jsonify({'error': 'Unauthorized to update this course'}), 403
 
     data = request.get_json()
-
-    # Update basic course information
     course.title = data.get('title', course.title)
     course.image = data.get('image', course.image)
     course.content = data.get('content', course.content)
@@ -2237,7 +2228,31 @@ import os
 @app.route('/user/posts', methods=['POST'])
 @jwt_required()
 def create_user_post():
-    user_id = get_jwt_identity()
+    claims = get_jwt()
+    if claims.get('is_admin'):
+        # For admin users
+        admin_id = get_jwt_identity()
+        admin = Admin.query.get(admin_id)
+        if not admin:
+            return jsonify({'error': 'Admin not found'}), 404
+        user_id = admin_id
+        user_info = {
+            'id': admin.id,
+            'full_name': admin.username,
+            'profile_image': admin.profile_image
+        }
+    else:
+        # For regular users
+        user_email = get_jwt_identity()
+        user = User.query.filter_by(email=user_email).first()
+        if not user:
+            return jsonify({'error': 'User not found'}), 404
+        user_id = user.id
+        user_info = {
+            'id': user.id,
+            'full_name': user.full_name,
+            'profile_image': user.profile_image
+        }
 
     title = request.form.get('title')
     executive_summary = request.form.get('executive_summary')
@@ -2261,34 +2276,42 @@ def create_user_post():
         title=title,
         executive_summary=executive_summary,
         subject=subject,
-        document_path=document_path,
         doi_link=doi_link,
-        video_link=video_link
+        video_link=video_link,
+        document_path=document_path
     )
 
     db.session.add(new_post)
     db.session.commit()
 
-    return jsonify({
-        'message': 'Post created successfully',
-        'post': {
-            'id': new_post.id,
-            'title': new_post.title,
-            'executive_summary': new_post.executive_summary,
-            'subject': new_post.subject,
-            'doi_link': new_post.doi_link,
-            'video_link': new_post.video_link,
-            'document_path': new_post.document_path,
-            'created_at': new_post.created_at
-        }
-    }), 201
+    response_data = {
+        'id': new_post.id,
+        'title': new_post.title,
+        'executive_summary': new_post.executive_summary,
+        'subject': new_post.subject,
+        'doi_link': new_post.doi_link,
+        'video_link': new_post.video_link,
+        'document_path': new_post.document_path,
+        'created_at': new_post.created_at,
+        'user': user_info
+    }
+
+    return jsonify(response_data), 201
 
 @app.route('/user/posts', methods=['GET'])
 @jwt_required()
 def get_user_posts():
-    user_id = get_jwt_identity()
-
-    posts = UserPost.query.filter_by(user_id=user_id).order_by(UserPost.created_at.desc()).all()
+    claims = get_jwt()
+    if claims.get('is_admin'):
+        # For admin users, show all posts
+        posts = UserPost.query.order_by(UserPost.created_at.desc()).all()
+    else:
+        # For regular users, show only their posts
+        user_email = get_jwt_identity()
+        user = User.query.filter_by(email=user_email).first()
+        if not user:
+            return jsonify({'error': 'User not found'}), 404
+        posts = UserPost.query.filter_by(user_id=user.id).order_by(UserPost.created_at.desc()).all()
 
     posts_data = [{
         'id': post.id,
@@ -2298,7 +2321,12 @@ def get_user_posts():
         'doi_link': post.doi_link,
         'video_link': post.video_link,
         'document_path': post.document_path,
-        'created_at': post.created_at
+        'created_at': post.created_at,
+        'user': {
+            'id': post.user.id if post.user else None,
+            'full_name': post.user.full_name if post.user else 'Unknown',
+            'profile_image': post.user.profile_image if post.user else None
+        }
     } for post in posts]
 
     return jsonify(posts_data), 200
@@ -2321,7 +2349,8 @@ def get_user_post(post_id):
         'created_at': post.created_at,
         'user': {
             'id': post.user.id,
-            'full_name': post.user.full_name
+            'full_name': post.user.full_name,
+            'profile_image': post.user.profile_image
         }
     }
 
