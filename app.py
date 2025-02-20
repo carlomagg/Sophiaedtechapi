@@ -20,6 +20,7 @@ from sqlalchemy.sql import func
 import time
 import random
 from dotenv import load_dotenv
+from flask_cors import cross_origin
 
 # Load environment variables
 load_dotenv()
@@ -31,12 +32,12 @@ app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///database.db'
 app.config['SECRET_KEY'] = '8Zn9Ql0gTvRqW3EzDX4uKX0nPjVqRnGp'
 app.config['UPLOAD_FOLDER'] = 'uploads/profile_images'
 app.config['PEER_REVIEW_UPLOAD_FOLDER'] = 'uploads/peer_reviews'
-app.config['JSON_AS_ASCII'] = False
-app.config['JSONIFY_PRETTYPRINT_REGULAR'] = True
 os.makedirs(app.config['PEER_REVIEW_UPLOAD_FOLDER'], exist_ok=True)
 UPLOAD_FOLDER = 'uploads/user_posts'
 app.config['USER_POST_UPLOAD_FOLDER'] = UPLOAD_FOLDER
 os.makedirs(app.config['USER_POST_UPLOAD_FOLDER'], exist_ok=True)
+app.config['DOCUMENTS_UPLOAD_FOLDER'] = 'uploads/documents'
+os.makedirs(app.config['DOCUMENTS_UPLOAD_FOLDER'], exist_ok=True)
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(hours=1)
 app.config['JWT_REFRESH_TOKEN_EXPIRES'] = timedelta(days=30)
@@ -240,7 +241,7 @@ def create_course():
             author_id=author_id,
             status='draft'
         )
-        
+
         # Add category
         category_name = data.get('course_category')
         category = CourseCategory.query.filter_by(name=category_name).first()
@@ -248,7 +249,7 @@ def create_course():
             category = CourseCategory(name=category_name)
             db.session.add(category)
         course.categories.append(category)
-        
+
         # Handle modules
         number_of_modules = int(data.get('number_of_modules', 0))
         for i in range(number_of_modules):
@@ -317,15 +318,15 @@ def create_course():
                 media_file=module_media_file
             )
             db.session.add(module)
-        
+
         db.session.add(course)
         db.session.commit()
-        
+
         return jsonify({
             'message': 'Course created successfully',
             'course_id': course.id
         }), 201
-        
+   
     except Exception as e:
         db.session.rollback()
         return jsonify({'error': f'Failed to create course: {str(e)}'}), 500
@@ -1060,37 +1061,31 @@ def get_all_users():
                 'country_region': user.location.country_region if user.location else None,
                 'city': user.location.city if user.location else None
             },
-            'education': [
-                {
-                    'id': education.id,
-                    'school': education.school,
-                    'degree': education.degree,
-                    'field_of_study': education.field_of_study,
-                    'start_date': education.start_date.isoformat() if education.start_date else None,
-                    'end_date': education.end_date.isoformat() if education.end_date else None
-                } for education in user.education
-            ],
-            'work_experience': [
-                {
-                    'id': work.id,
-                    'company': work.company,
-                    'role_title': work.role_title,
-                    'job_description': work.job_description,
-                    'start_date': work.start_date.isoformat() if work.start_date else None,
-                    'end_date': work.end_date.isoformat() if work.end_date else None
-                } for work in user.work_experience
-            ],
-            'licenses_certifications': [
-                {
-                    'id': license.id,
-                    'name': license.name,
-                    'issuing_organization': license.issuing_organization,
-                    'issue_date': license.issue_date.isoformat() if license.issue_date else None,
-                    'expiration_date': license.expiration_date.isoformat() if license.expiration_date else None,
-                    'credentials_id': license.credentials_id,
-                    'credential_url': license.credential_url
-                } for license in user.licenses_certifications
-            ]
+            'education': [{
+                'id': education.id,
+                'school': education.school,
+                'degree': education.degree,
+                'field_of_study': education.field_of_study,
+                'start_date': education.start_date.isoformat() if education.start_date else None,
+                'end_date': education.end_date.isoformat() if education.end_date else None
+            } for education in user.education],
+            'work_experience': [{
+                'id': work.id,
+                'company': work.company,
+                'role_title': work.role_title,
+                'job_description': work.job_description,
+                'start_date': work.start_date.isoformat() if work.start_date else None,
+                'end_date': work.end_date.isoformat() if work.end_date else None
+            } for work in user.work_experience],
+            'licenses_certifications': [{
+                'id': license.id,
+                'name': license.name,
+                'issuing_organization': license.issuing_organization,
+                'issue_date': license.issue_date.isoformat() if license.issue_date else None,
+                'expiration_date': license.expiration_date.isoformat() if license.expiration_date else None,
+                'credentials_id': license.credentials_id,
+                'credential_url': license.credential_url
+            } for license in user.licenses_certifications]
         } for user in users
     ]
     return jsonify(users_data), 200
@@ -2261,7 +2256,7 @@ def create_user_post():
         file = request.files['document']
         if file.filename != '':
             filename = secure_filename(file.filename)
-            document_path = os.path.join(app.config['USER_POST_UPLOAD_FOLDER'], filename)
+            document_path = os.path.join(app.config['DOCUMENTS_UPLOAD_FOLDER'], filename)
             file.save(document_path)
 
     post = UserPost(
@@ -3047,6 +3042,72 @@ def update_instructor_status(instructor_id):
         'message': 'Instructor status updated successfully',
         'instructor_status': instructor.status
     }), 200
+
+@app.route('/api/documents', methods=['POST', 'OPTIONS'])
+@cross_origin()
+@jwt_required()
+def upload_document():
+    try:
+        # Handle preflight request
+        if request.method == 'OPTIONS':
+            return jsonify({}), 200
+
+        # Check if the post request has the file part
+        if 'document' not in request.files:
+            return jsonify({
+                'error': 'No document file provided',
+                'message': 'Document file is required'
+            }), 400
+            
+        file = request.files['document']
+        if file.filename == '':
+            return jsonify({
+                'error': 'No selected file',
+                'message': 'Please select a file to upload'
+            }), 400
+
+        # Get other form data
+        title = request.form.get('title')
+        executive_summary = request.form.get('executive_summary')
+        subject = request.form.get('subject')
+        doi_link = request.form.get('doi_link')
+        video_link = request.form.get('video_link')
+
+        # Validate required fields
+        if not all([title, executive_summary, subject]):
+            return jsonify({
+                'error': 'Title, executive summary, and subject are required',
+                'message': 'Please provide all required fields'
+            }), 400
+
+        # Save the file
+        if file:
+            filename = secure_filename(file.filename)
+            file_path = os.path.join(app.config['DOCUMENTS_UPLOAD_FOLDER'], filename)
+            os.makedirs(os.path.dirname(file_path), exist_ok=True)
+            file.save(file_path)
+
+            # Create response object
+            response_data = {
+                'message': 'Document uploaded successfully',
+                'document': {
+                    'title': title,
+                    'executive_summary': executive_summary,
+                    'subject': subject,
+                    'doi_link': doi_link,
+                    'video_link': video_link,
+                    'document_path': filename,
+                    'upload_date': datetime.datetime.now().isoformat()
+                }
+            }
+
+            return jsonify(response_data), 201
+
+    except Exception as e:
+        return jsonify({
+            'error': 'An error occurred while processing your request',
+            'message': str(e)
+        }), 500
 
 if __name__ == '__main__':
     with app.app_context():
