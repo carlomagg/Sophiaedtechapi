@@ -2248,9 +2248,6 @@ def create_user_post():
     if not title or not executive_summary or not subject:
         return jsonify({'error': 'Title, executive summary, and subject are required'}), 400
 
-    if not Course.query.filter_by(title=subject).first():
-        return jsonify({'error': 'Invalid subject. Must match a course title.'}), 400
-
     document_path = None
     if 'document' in request.files:
         file = request.files['document']
@@ -2259,20 +2256,32 @@ def create_user_post():
             document_path = os.path.join(app.config['DOCUMENTS_UPLOAD_FOLDER'], filename)
             file.save(document_path)
 
-    post = UserPost(
+    new_post = UserPost(
         user_id=user_id,
         title=title,
         executive_summary=executive_summary,
-        document_path=document_path,
         subject=subject,
+        document_path=document_path,
         doi_link=doi_link,
         video_link=video_link
     )
 
-    db.session.add(post)
+    db.session.add(new_post)
     db.session.commit()
 
-    return jsonify({'message': 'Post created successfully', 'post_id': post.id}), 201
+    return jsonify({
+        'message': 'Post created successfully',
+        'post': {
+            'id': new_post.id,
+            'title': new_post.title,
+            'executive_summary': new_post.executive_summary,
+            'subject': new_post.subject,
+            'doi_link': new_post.doi_link,
+            'video_link': new_post.video_link,
+            'document_path': new_post.document_path,
+            'created_at': new_post.created_at
+        }
+    }), 201
 
 @app.route('/user/posts', methods=['GET'])
 @jwt_required()
@@ -2285,10 +2294,10 @@ def get_user_posts():
         'id': post.id,
         'title': post.title,
         'executive_summary': post.executive_summary,
-        'document_path': post.document_path,
         'subject': post.subject,
         'doi_link': post.doi_link,
         'video_link': post.video_link,
+        'document_path': post.document_path,
         'created_at': post.created_at
     } for post in posts]
 
@@ -2305,10 +2314,10 @@ def get_user_post(post_id):
         'id': post.id,
         'title': post.title,
         'executive_summary': post.executive_summary,
-        'document_path': post.document_path,
         'subject': post.subject,
         'doi_link': post.doi_link,
         'video_link': post.video_link,
+        'document_path': post.document_path,
         'created_at': post.created_at,
         'user': {
             'id': post.user.id,
