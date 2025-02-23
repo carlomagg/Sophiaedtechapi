@@ -212,6 +212,7 @@ enrollment_table = db.Table('enrollment',
 @jwt_required()
 def create_course():
     try:
+        claims = get_jwt()
         author_id = get_jwt_identity()
         
         # Get form data
@@ -222,6 +223,21 @@ def create_course():
         for field in required_fields:
             if not data.get(field):
                 return jsonify({'error': f'{field} is required'}), 400
+        
+        # If admin is creating the course, we need to create or get a system user
+        if claims.get('is_admin'):
+            system_user = User.query.filter_by(email='system@admin.com').first()
+            if not system_user:
+                # Create a system user if it doesn't exist
+                system_user = User(
+                    full_name='System Admin',
+                    email='system@admin.com',
+                    password=generate_password_hash('system123', method='pbkdf2:sha256'),
+                    confirm_password=generate_password_hash('system123', method='pbkdf2:sha256')
+                )
+                db.session.add(system_user)
+                db.session.commit()
+            author_id = system_user.id
         
         # Create course
         course = Course(
@@ -234,97 +250,37 @@ def create_course():
             author_id=author_id,
             status='draft'
         )
-
-        # Add category
+        
+        # Handle file upload for course image
+        if 'image' in request.files:
+            file = request.files['image']
+            if file and allowed_file(file.filename):
+                filename = secure_filename(file.filename)
+                file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+                course.image = filename
+        
+        db.session.add(course)
+        
+        # Create and associate course category
         category_name = data.get('course_category')
         category = CourseCategory.query.filter_by(name=category_name).first()
         if not category:
             category = CourseCategory(name=category_name)
             db.session.add(category)
+        
         course.categories.append(category)
-
-        # Handle modules
-        number_of_modules = int(data.get('number_of_modules', 0))
-        for i in range(number_of_modules):
-            module_number = i + 1
-            
-            # Handle module files
-            module_additional_resources = None
-            module_media_file = None
-            
-            # Handle additional resources for this module
-            resource_key = f'module_{module_number}_additional_resources'
-            if resource_key in request.files:
-                resource_file = request.files[resource_key]
-                if resource_file and resource_file.filename != '':
-                    # Validate file size (20MB max)
-                    if len(resource_file.read()) > 20 * 1024 * 1024:
-                        return jsonify({'error': f'Module {module_number} additional resources file size must be less than 20MB'}), 400
-                    resource_file.seek(0)
-                    
-                    # Validate file type
-                    allowed_extensions = {'pdf', 'docx', 'ppt', 'xl'}
-                    if not resource_file.filename.split('.')[-1].lower() in allowed_extensions:
-                        return jsonify({'error': f'Invalid file type for module {module_number} additional resources'}), 400
-                    
-                    filename = secure_filename(resource_file.filename)
-                    file_path = os.path.join(app.config['UPLOAD_FOLDER'], f'module_{module_number}_{filename}')
-                    resource_file.save(file_path)
-                    module_additional_resources = file_path
-            
-            # Handle media file for this module
-            media_key = f'module_{module_number}_media'
-            if media_key in request.files:
-                media_file = request.files[media_key]
-                if media_file and media_file.filename != '':
-                    # Validate file size (20MB max)
-                    if len(media_file.read()) > 20 * 1024 * 1024:
-                        return jsonify({'error': f'Module {module_number} media file size must be less than 20MB'}), 400
-                    media_file.seek(0)
-                    
-                    filename = secure_filename(media_file.filename)
-                    if filename.split('.')[-1].lower() in {'jpg', 'jpeg', 'png', 'gif'}:
-                        # Handle image upload (500x500)
-                        try:
-                            img = Image.open(media_file)
-                            img = img.resize((500, 500))
-                            file_path = os.path.join(app.config['UPLOAD_FOLDER'], f'module_{module_number}_{filename}')
-                            img.save(file_path)
-                            module_media_file = file_path
-                        except Exception as e:
-                            return jsonify({'error': f'Error processing image for module {module_number}: {str(e)}'}), 400
-                    else:
-                        # Handle video upload
-                        file_path = os.path.join(app.config['UPLOAD_FOLDER'], f'module_{module_number}_{filename}')
-                        media_file.save(file_path)
-                        module_media_file = file_path
-            
-            # Create module
-            module = Module(
-                name=f'Module {module_number}',
-                title=data.get(f'module_{module_number}_title'),
-                description=data.get(f'module_{module_number}_description'),
-                content=data.get(f'module_{module_number}_content'),
-                course_id=course.id,
-                order=module_number,
-                additional_resources=module_additional_resources,
-                media_file=module_media_file
-            )
-            db.session.add(module)
-
-        db.session.add(course)
         db.session.commit()
-
+        
         return jsonify({
             'message': 'Course created successfully',
             'course_id': course.id
         }), 201
-   
+        
     except Exception as e:
         db.session.rollback()
-        return jsonify({'error': f'Failed to create course: {str(e)}'}), 500
+        return jsonify({'error': str(e)}), 500
 
-   # Get all courses
+# Get all courses
 @app.route('/courses', methods=['GET'])
 def get_courses():
     courses = Course.query.all()
@@ -1700,9 +1656,9 @@ def get_my_submissions():
 class Admin(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(100), unique=True, nullable=False)
+    email = db.Column(db.String(100), unique=True, nullable=False)
     password = db.Column(db.String(100), nullable=False)
     fullname = db.Column(db.String(100))
-    email = db.Column(db.String(100))
     phone = db.Column(db.String(20))
     profile_image = db.Column(db.String(200))
     created_at = db.Column(db.DateTime, server_default=func.now())
@@ -1713,13 +1669,12 @@ class Admin(db.Model):
         return {
             'id': self.id,
             'username': self.username,
-            'fullname': self.fullname or '',
-            'email': self.email or '',
-            'phone': self.phone or '',
-            'profile_image': self.profile_image or '',
-            'created_at': self.created_at.isoformat() if self.created_at else '',
-            'updated_at': self.updated_at.isoformat() if self.updated_at else '',
-            'roles': [{'id': role.id, 'name': role.name} for role in self.roles]
+            'email': self.email,
+            'fullname': self.fullname,
+            'phone': self.phone,
+            'profile_image': self.profile_image,
+            'created_at': self.created_at,
+            'updated_at': self.updated_at
         }
 
 # Role model
@@ -1779,50 +1734,67 @@ class InstructorVerification(db.Model):
 def create_admin():
     data = request.get_json()
     username = data.get('username')
+    email = data.get('email')
     password = data.get('password')
+    fullname = data.get('fullname')
+    phone = data.get('phone')
 
-    if not username or not password:
-        return jsonify({'error': 'Username and password are required'}), 400
+    if not username or not email or not password:
+        return jsonify({'error': 'Username, email and password are required'}), 400
 
-    if Admin.query.filter_by(username=username).first():
-        return jsonify({'error': 'Admin already exists'}), 400
+    if Admin.query.filter_by(username=username).first() or Admin.query.filter_by(email=email).first():
+        return jsonify({'error': 'Admin with this username or email already exists'}), 400
 
     try:
         hashed_password = generate_password_hash(password, method='pbkdf2:sha256')
 
-        admin = Admin(username=username, password=hashed_password)
+        admin = Admin(
+            username=username,
+            email=email,
+            password=hashed_password,
+            fullname=fullname,
+            phone=phone
+        )
         db.session.add(admin)
         db.session.commit()
 
         # Generate JWT token with admin claim
-        access_token = create_access_token(identity=username, additional_claims={'is_admin': True})
+        access_token = create_access_token(identity=admin.id, additional_claims={'is_admin': True})
+        refresh_token = create_refresh_token(identity=admin.id)
 
         return jsonify({
             'message': 'Admin created successfully',
-            'access_token': access_token
+            'access_token': access_token,
+            'refresh_token': refresh_token
         }), 201
 
     except Exception as e:
         db.session.rollback()
-        return jsonify({'error': f'An error occurred: {str(e)}'}), 500
+        return jsonify({'error': str(e)}), 500
 
 # Admin login
 @app.route('/admin/login', methods=['POST'])
 def admin_login():
     data = request.get_json()
-    username = data.get('username')
+    email = data.get('email')
     password = data.get('password')
 
-    if not username or not password:
-        return jsonify({'error': 'Username and password are required'}), 400
+    if not email or not password:
+        return jsonify({'error': 'Email and password are required'}), 400
 
-    admin = Admin.query.filter_by(username=username).first()
+    admin = Admin.query.filter_by(email=email).first()
 
     if not admin or not check_password_hash(admin.password, password):
         return jsonify({'error': 'Invalid credentials'}), 401
 
     access_token = create_access_token(identity=admin.id, additional_claims={'is_admin': True})
-    return jsonify({'access_token': access_token}), 200
+    refresh_token = create_refresh_token(identity=admin.id)
+    
+    return jsonify({
+        'access_token': access_token,
+        'refresh_token': refresh_token,
+        'message': 'Login successful'
+    }), 200
 
 # Admin middleware
 def admin_required():
@@ -2212,7 +2184,9 @@ class UserPost(db.Model):
     doi_link = db.Column(db.String(255), nullable=True)
     video_link = db.Column(db.String(255), nullable=True)
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.datetime.utcnow)
-
+    upvote_count = db.Column(db.Integer, default=0)
+    downvote_count = db.Column(db.Integer, default=0)
+    comment_count = db.Column(db.Integer, default=0)
     # The relationship is now defined in the User model, so we don't need to repeat it here
 
   
@@ -2302,32 +2276,64 @@ def create_user_post():
 @jwt_required()
 def get_user_posts():
     claims = get_jwt()
+    current_user_email = get_jwt_identity()
+    current_user = User.query.filter_by(email=current_user_email).first()
+
     if claims.get('is_admin'):
         # For admin users, show all posts
         posts = UserPost.query.order_by(UserPost.created_at.desc()).all()
     else:
         # For regular users, show only their posts
-        user_email = get_jwt_identity()
-        user = User.query.filter_by(email=user_email).first()
+        user = User.query.filter_by(email=current_user_email).first()
         if not user:
             return jsonify({'error': 'User not found'}), 404
         posts = UserPost.query.filter_by(user_id=user.id).order_by(UserPost.created_at.desc()).all()
 
-    posts_data = [{
-        'id': post.id,
-        'title': post.title,
-        'executive_summary': post.executive_summary,
-        'subject': post.subject,
-        'doi_link': post.doi_link,
-        'video_link': post.video_link,
-        'document_path': post.document_path,
-        'created_at': post.created_at,
-        'user': {
-            'id': post.user.id if post.user else None,
-            'full_name': post.user.full_name if post.user else 'Unknown',
-            'profile_image': post.user.profile_image if post.user else None
+    posts_data = []
+    for post in posts:
+        # Get current user's vote if any
+        user_vote = None
+        if current_user:
+            vote = PostVote.query.filter_by(user_id=current_user.id, post_id=post.id).first()
+            if vote:
+                user_vote = vote.vote_type
+
+        # Handle both admin and user posts
+        if post.user:
+            user_info = {
+                'id': post.user.id,
+                'full_name': post.user.full_name,
+                'profile_image': post.user.profile_image
+            }
+        else:
+            # If no user is associated, it's an admin post
+            admin = Admin.query.get(post.user_id)
+            if admin:
+                user_info = {
+                    'id': admin.id,
+                    'full_name': admin.username,
+                    'profile_image': admin.profile_image
+                }
+            else:
+                # Skip posts where neither user nor admin exists
+                continue
+
+        post_data = {
+            'id': post.id,
+            'title': post.title,
+            'executive_summary': post.executive_summary,
+            'subject': post.subject,
+            'doi_link': post.doi_link,
+            'video_link': post.video_link,
+            'document_path': post.document_path,
+            'created_at': post.created_at,
+            'upvote_count': post.upvote_count,
+            'downvote_count': post.downvote_count,
+            'comment_count': post.comment_count,
+            'user_vote': user_vote,
+            'user': user_info
         }
-    } for post in posts]
+        posts_data.append(post_data)
 
     return jsonify(posts_data), 200
 
@@ -2338,6 +2344,15 @@ def get_user_post(post_id):
     if not post:
         return jsonify({'error': 'Post not found'}), 404
 
+    # Get current user's vote if any
+    current_user_email = get_jwt_identity()
+    current_user = User.query.filter_by(email=current_user_email).first()
+    user_vote = None
+    if current_user:
+        vote = PostVote.query.filter_by(user_id=current_user.id, post_id=post_id).first()
+        if vote:
+            user_vote = vote.vote_type
+
     post_data = {
         'id': post.id,
         'title': post.title,
@@ -2347,6 +2362,10 @@ def get_user_post(post_id):
         'video_link': post.video_link,
         'document_path': post.document_path,
         'created_at': post.created_at,
+        'upvote_count': post.upvote_count,
+        'downvote_count': post.downvote_count,
+        'comment_count': post.comment_count,
+        'user_vote': user_vote,
         'user': {
             'id': post.user.id,
             'full_name': post.user.full_name,
@@ -3081,6 +3100,7 @@ def update_instructor_status(instructor_id):
         'instructor_status': instructor.status
     }), 200
 
+
 @app.route('/api/documents', methods=['POST', 'OPTIONS'])
 @cross_origin()
 @jwt_required()
@@ -3146,6 +3166,227 @@ def upload_document():
             'error': 'An error occurred while processing your request',
             'message': str(e)
         }), 500
+
+# PostVote model
+class PostVote(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    post_id = db.Column(db.Integer, db.ForeignKey('user_post.id'), nullable=False)
+    vote_type = db.Column(db.String(10), nullable=False)  # 'upvote' or 'downvote'
+    created_at = db.Column(db.DateTime, default=datetime.datetime.utcnow)
+    
+    user = db.relationship('User', backref=db.backref('post_votes', lazy='dynamic'))
+    post = db.relationship('UserPost', backref=db.backref('votes', lazy='dynamic'))
+
+# PostComment model
+class PostComment(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    post_id = db.Column(db.Integer, db.ForeignKey('user_post.id'), nullable=False)
+    content = db.Column(db.Text, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.datetime.utcnow)
+    
+    user = db.relationship('User', backref=db.backref('post_comments', lazy='dynamic'))
+    post = db.relationship('UserPost', backref=db.backref('comments', lazy='dynamic'))
+
+@app.route('/user/posts/<int:post_id>/vote', methods=['POST'])
+@jwt_required()
+def vote_on_post(post_id):
+    user_email = get_jwt_identity()
+    user = User.query.filter_by(email=user_email).first()
+    if not user:
+        return jsonify({'error': 'User not found'}), 404
+
+    post = UserPost.query.get(post_id)
+    if not post:
+        return jsonify({'error': 'Post not found'}), 404
+
+    data = request.get_json()
+    vote_type = data.get('vote_type')
+    if vote_type not in ['upvote', 'downvote']:
+        return jsonify({'error': 'Invalid vote type'}), 400
+
+    # Check if user has already voted
+    existing_vote = PostVote.query.filter_by(user_id=user.id, post_id=post_id).first()
+    
+    if existing_vote:
+        if existing_vote.vote_type == vote_type:
+            # Remove vote if clicking same button
+            if vote_type == 'upvote':
+                post.upvote_count -= 1
+            else:
+                post.downvote_count -= 1
+            db.session.delete(existing_vote)
+        else:
+            # Change vote type
+            if vote_type == 'upvote':
+                post.upvote_count += 1
+                post.downvote_count -= 1
+            else:
+                post.upvote_count -= 1
+                post.downvote_count += 1
+            existing_vote.vote_type = vote_type
+    else:
+        # Create new vote
+        vote = PostVote(user_id=user.id, post_id=post_id, vote_type=vote_type)
+        if vote_type == 'upvote':
+            post.upvote_count += 1
+        else:
+            post.downvote_count += 1
+        db.session.add(vote)
+
+    try:
+        db.session.commit()
+        return jsonify({
+            'message': 'Vote recorded successfully',
+            'upvote_count': post.upvote_count,
+            'downvote_count': post.downvote_count
+        }), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/user/posts/<int:post_id>/comments', methods=['POST'])
+@jwt_required()
+def add_comment(post_id):
+    user_email = get_jwt_identity()
+    user = User.query.filter_by(email=user_email).first()
+    if not user:
+        return jsonify({'error': 'User not found'}), 404
+
+    post = UserPost.query.get(post_id)
+    if not post:
+        return jsonify({'error': 'Post not found'}), 404
+
+    data = request.get_json()
+    content = data.get('content')
+    if not content:
+        return jsonify({'error': 'Comment content is required'}), 400
+
+    comment = PostComment(user_id=user.id, post_id=post_id, content=content)
+    post.comment_count += 1
+    
+    try:
+        db.session.add(comment)
+        db.session.commit()
+        return jsonify({
+            'message': 'Comment added successfully',
+            'comment': {
+                'id': comment.id,
+                'content': comment.content,
+                'created_at': comment.created_at,
+                'user': {
+                    'id': user.id,
+                    'full_name': user.full_name,
+                    'profile_image': user.profile_image
+                }
+            }
+        }), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/user/posts/<int:post_id>/comments', methods=['GET'])
+@jwt_required()
+def get_comments(post_id):
+    post = UserPost.query.get(post_id)
+    if not post:
+        return jsonify({'error': 'Post not found'}), 404
+
+    comments = PostComment.query.filter_by(post_id=post_id).order_by(PostComment.created_at.desc()).all()
+    comments_data = [{
+        'id': comment.id,
+        'content': comment.content,
+        'created_at': comment.created_at,
+        'user': {
+            'id': comment.user.id,
+            'full_name': comment.user.full_name,
+            'profile_image': comment.user.profile_image
+        }
+    } for comment in comments]
+
+    return jsonify(comments_data), 200
+
+@app.route('/user/posts/<int:post_id>', methods=['PUT'])
+@jwt_required()
+def update_user_post(post_id):
+    user_email = get_jwt_identity()
+    user = User.query.filter_by(email=user_email).first()
+    if not user:
+        return jsonify({'error': 'User not found'}), 404
+
+    post = UserPost.query.get(post_id)
+    if not post:
+        return jsonify({'error': 'Post not found'}), 404
+
+    # Check if user owns the post
+    if post.user_id != user.id:
+        return jsonify({'error': 'Unauthorized to edit this post'}), 403
+
+    data = request.get_json()
+    
+    # Update fields if provided
+    if 'title' in data:
+        post.title = data['title']
+    if 'executive_summary' in data:
+        post.executive_summary = data['executive_summary']
+    if 'subject' in data:
+        post.subject = data['subject']
+    if 'doi_link' in data:
+        post.doi_link = data['doi_link']
+    if 'video_link' in data:
+        post.video_link = data['video_link']
+
+    try:
+        db.session.commit()
+        return jsonify({
+            'message': 'Post updated successfully',
+            'post': {
+                'id': post.id,
+                'title': post.title,
+                'executive_summary': post.executive_summary,
+                'subject': post.subject,
+                'doi_link': post.doi_link,
+                'video_link': post.video_link,
+                'document_path': post.document_path,
+                'created_at': post.created_at,
+                'upvote_count': post.upvote_count,
+                'downvote_count': post.downvote_count,
+                'comment_count': post.comment_count
+            }
+        }), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/user/posts/<int:post_id>', methods=['DELETE'])
+@jwt_required()
+def delete_user_post(post_id):
+    user_email = get_jwt_identity()
+    user = User.query.filter_by(email=user_email).first()
+    if not user:
+        return jsonify({'error': 'User not found'}), 404
+
+    post = UserPost.query.get(post_id)
+    if not post:
+        return jsonify({'error': 'Post not found'}), 404
+
+    # Check if user owns the post
+    if post.user_id != user.id:
+        return jsonify({'error': 'Unauthorized to delete this post'}), 403
+
+    try:
+        # Delete associated votes and comments
+        PostVote.query.filter_by(post_id=post_id).delete()
+        PostComment.query.filter_by(post_id=post_id).delete()
+        
+        # Delete the post
+        db.session.delete(post)
+        db.session.commit()
+        return jsonify({'message': 'Post deleted successfully'}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     with app.app_context():
