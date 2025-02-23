@@ -20,6 +20,7 @@ import time
 import random
 from dotenv import load_dotenv
 from flask_cors import cross_origin
+from math import radians, sin, cos, sqrt, atan2
 
 # Load environment variables
 load_dotenv()
@@ -53,6 +54,12 @@ db = SQLAlchemy(app)
 course_followers = db.Table('course_followers',
     db.Column('user_id', db.Integer, db.ForeignKey('user.id'), primary_key=True),
     db.Column('course_id', db.Integer, db.ForeignKey('course.id'), primary_key=True)
+)
+
+# User-Subject following relationship
+user_subjects = db.Table('user_subjects',
+    db.Column('user_id', db.Integer, db.ForeignKey('user.id'), primary_key=True),
+    db.Column('subject_id', db.Integer, db.ForeignKey('subject.id'), primary_key=True)
 )
 
 class Subject(db.Model):
@@ -91,6 +98,7 @@ class User(db.Model):
     roles = db.relationship('Role', secondary=roles_users, backref=db.backref('users', lazy='dynamic'))
     posts = db.relationship('UserPost', backref='user', lazy='dynamic')
     followed_courses = db.relationship('Course', secondary='course_followers', backref='followers')
+    followed_subjects = db.relationship('Subject', secondary=user_subjects, backref=db.backref('followers', lazy='dynamic'))
     notifications = db.relationship('Notification', backref='user', lazy='dynamic')
     
     def __repr__(self):
@@ -3387,6 +3395,118 @@ def delete_user_post(post_id):
     except Exception as e:
         db.session.rollback()
         return jsonify({'error': str(e)}), 500
+
+@app.route('/subjects/<int:subject_id>/follow', methods=['POST'])
+@jwt_required()
+def follow_subject(subject_id):
+    user_email = get_jwt_identity()
+    user = User.query.filter_by(email=user_email).first()
+    if not user:
+        return jsonify({'error': 'User not found'}), 404
+
+    subject = Subject.query.get(subject_id)
+    if not subject:
+        return jsonify({'error': 'Subject not found'}), 404
+
+    if subject in user.followed_subjects:
+        return jsonify({'message': 'Already following this subject'}), 400
+
+    user.followed_subjects.append(subject)
+    db.session.commit()
+    return jsonify({'message': f'Now following subject: {subject.name}'}), 200
+
+@app.route('/subjects/<int:subject_id>/unfollow', methods=['POST'])
+@jwt_required()
+def unfollow_subject(subject_id):
+    user_email = get_jwt_identity()
+    user = User.query.filter_by(email=user_email).first()
+    if not user:
+        return jsonify({'error': 'User not found'}), 404
+
+    subject = Subject.query.get(subject_id)
+    if not subject:
+        return jsonify({'error': 'Subject not found'}), 404
+
+    if subject not in user.followed_subjects:
+        return jsonify({'message': 'Not following this subject'}), 400
+
+    user.followed_subjects.remove(subject)
+    db.session.commit()
+    return jsonify({'message': f'Unfollowed subject: {subject.name}'}), 200
+
+def calculate_distance(lat1, lon1, lat2, lon2):
+    R = 6371  # Earth's radius in kilometers
+
+    lat1, lon1, lat2, lon2 = map(radians, [lat1, lon1, lat2, lon2])
+    dlat = lat2 - lat1
+    dlon = lon2 - lon1
+
+    a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
+    c = 2 * atan2(sqrt(a), sqrt(1-a))
+    distance = R * c
+
+    return distance
+
+@app.route('/recommended-posts', methods=['GET'])
+@jwt_required()
+def get_recommended_posts():
+    user_email = get_jwt_identity()
+    user = User.query.filter_by(email=user_email).first()
+    if not user:
+        return jsonify({'error': 'User not found'}), 404
+
+    # Get user's followed subjects
+    followed_subject_names = [subject.name for subject in user.followed_subjects]
+    
+    # Get user's location
+    user_location = user.location
+    if not user_location:
+        return jsonify({'error': 'Please update your location in profile settings'}), 400
+
+    # Get all posts
+    posts = UserPost.query.all()
+    scored_posts = []
+
+    for post in posts:
+        score = 0
+        
+        # Subject match score (weight: 0.6)
+        if post.subject in followed_subject_names:
+            score += 0.6
+
+        # Location score (weight: 0.4)
+        post_owner = User.query.get(post.user_id)
+        if post_owner and post_owner.location:
+            # For simplicity, we're using city match
+            if post_owner.location.city == user_location.city:
+                score += 0.4
+            elif post_owner.location.country_region == user_location.country_region:
+                score += 0.2
+
+        if score > 0:  # Only include posts with some relevance
+            scored_posts.append({
+                'id': post.id,
+                'title': post.title,
+                'executive_summary': post.executive_summary,
+                'subject': post.subject,
+                'doi_link': post.doi_link,
+                'video_link': post.video_link,
+                'created_at': post.created_at,
+                'user': {
+                    'id': post_owner.id if post_owner else None,
+                    'full_name': post_owner.full_name if post_owner else None,
+                    'location': {
+                        'city': post_owner.location.city if post_owner and post_owner.location else None,
+                        'country_region': post_owner.location.country_region if post_owner and post_owner.location else None
+                    }
+                },
+                'relevance_score': score
+            })
+
+    # Sort posts by score (highest first) and created_at (newest first)
+    scored_posts.sort(key=lambda x: (x['relevance_score'], x['created_at']), reverse=True)
+
+    return jsonify(scored_posts), 200
 
 if __name__ == '__main__':
     with app.app_context():
