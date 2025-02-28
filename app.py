@@ -2285,46 +2285,35 @@ def create_user_post():
 def get_user_posts():
     claims = get_jwt()
     current_user_email = get_jwt_identity()
-    current_user = User.query.filter_by(email=current_user_email).first()
-
-    if claims.get('is_admin'):
-        # For admin users, show all posts
-        posts = UserPost.query.order_by(UserPost.created_at.desc()).all()
-    else:
-        # For regular users, show only their posts
-        user = User.query.filter_by(email=current_user_email).first()
-        if not user:
-            return jsonify({'error': 'User not found'}), 404
-        posts = UserPost.query.filter_by(user_id=user.id).order_by(UserPost.created_at.desc()).all()
+    
+    # Show all posts for all authenticated users
+    posts = UserPost.query.order_by(UserPost.created_at.desc()).all()
+    print(f"Number of posts retrieved: {len(posts)}")
 
     posts_data = []
     for post in posts:
+        # Get post author information
+        author = User.query.get(post.user_id)
+        if not author:
+            print(f"Author not found for post ID: {post.id}")
+            continue  # Skip posts where author doesn't exist
+
+        print(f"Processing post ID: {post.id} by author: {author.full_name}")
+        
+        author_info = {
+            'id': author.id,
+            'full_name': author.full_name,
+            'profile_image': author.profile_image
+        }
+
         # Get current user's vote if any
         user_vote = None
-        if current_user:
-            vote = PostVote.query.filter_by(user_id=current_user.id, post_id=post.id).first()
-            if vote:
-                user_vote = vote.vote_type
-
-        # Handle both admin and user posts
-        if post.user:
-            user_info = {
-                'id': post.user.id,
-                'full_name': post.user.full_name,
-                'profile_image': post.user.profile_image
-            }
-        else:
-            # If no user is associated, it's an admin post
-            admin = Admin.query.get(post.user_id)
-            if admin:
-                user_info = {
-                    'id': admin.id,
-                    'full_name': admin.username,
-                    'profile_image': admin.profile_image
-                }
-            else:
-                # Skip posts where neither user nor admin exists
-                continue
+        if not claims.get('is_admin'):  # Only check votes for regular users
+            current_user = User.query.filter_by(email=current_user_email).first()
+            if current_user:
+                vote = PostVote.query.filter_by(user_id=current_user.id, post_id=post.id).first()
+                if vote:
+                    user_vote = vote.vote_type
 
         post_data = {
             'id': post.id,
@@ -2339,7 +2328,8 @@ def get_user_posts():
             'downvote_count': post.downvote_count,
             'comment_count': post.comment_count,
             'user_vote': user_vote,
-            'user': user_info
+            'author': author_info,
+            'is_own_post': False if claims.get('is_admin') else (current_user and post.user_id == current_user.id)
         }
         posts_data.append(post_data)
 
@@ -2374,7 +2364,7 @@ def get_user_post(post_id):
         'downvote_count': post.downvote_count,
         'comment_count': post.comment_count,
         'user_vote': user_vote,
-        'user': {
+        'author': {
             'id': post.user.id,
             'full_name': post.user.full_name,
             'profile_image': post.user.profile_image
