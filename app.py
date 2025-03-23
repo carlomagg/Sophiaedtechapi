@@ -21,6 +21,7 @@ import random
 from dotenv import load_dotenv
 from flask_cors import cross_origin
 from math import radians, sin, cos, sqrt, atan2
+import json
 
 # Load environment variables
 load_dotenv()
@@ -256,16 +257,36 @@ def create_course():
             number_of_modules=int(data.get('number_of_modules', 0)),
             course_type=data.get('course_type'),
             author_id=author_id,
-            status='draft'
+            status='draft',
+            price=float(data.get('price', 0.0))
         )
         
-        # Handle file upload for course image
-        if 'image' in request.files:
-            file = request.files['image']
-            if file and allowed_file(file.filename):
-                filename = secure_filename(file.filename)
-                file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+        # Handle file uploads
+        files = request.files
+
+        # Handle course image
+        if 'image' in files:
+            image_file = files['image']
+            if image_file and allowed_file(image_file.filename):
+                filename = secure_filename(image_file.filename)
+                image_file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
                 course.image = filename
+
+        # Handle course video
+        if 'video' in files:
+            video_file = files['video']
+            if video_file and allowed_file(video_file.filename):
+                filename = secure_filename(video_file.filename)
+                video_file.save(os.path.join(app.config['COURSE_VIDEO_UPLOAD_FOLDER'], filename))
+                course.video = os.path.join(app.config['COURSE_VIDEO_UPLOAD_FOLDER'], filename)
+
+        # Handle additional resources
+        if 'additional_resources' in files:
+            resources_file = files['additional_resources']
+            if resources_file and allowed_file(resources_file.filename):
+                filename = secure_filename(resources_file.filename)
+                resources_file.save(os.path.join(app.config['UPLOAD_FOLDER'], 'resources', filename))
+                course.additional_resources = os.path.join('resources', filename)
         
         db.session.add(course)
         
@@ -277,6 +298,39 @@ def create_course():
             db.session.add(category)
         
         course.categories.append(category)
+
+        # Handle modules if provided
+        modules_data = json.loads(data.get('modules', '[]'))
+        for module_data in modules_data:
+            module = Module(
+                name=module_data.get('name'),
+                title=module_data.get('title'),
+                description=module_data.get('description'),
+                content=module_data.get('content'),
+                course_id=course.id,
+                order=module_data.get('order', 1)
+            )
+            
+            # Handle module media file if provided
+            module_file_key = f"module_{module_data.get('order')}_media"
+            if module_file_key in files:
+                media_file = files[module_file_key]
+                if media_file and allowed_file(media_file.filename):
+                    filename = secure_filename(media_file.filename)
+                    media_file.save(os.path.join(app.config['UPLOAD_FOLDER'], 'modules', filename))
+                    module.media_file = os.path.join('modules', filename)
+
+            # Handle module resources if provided
+            module_resources_key = f"module_{module_data.get('order')}_resources"
+            if module_resources_key in files:
+                resources_file = files[module_resources_key]
+                if resources_file and allowed_file(resources_file.filename):
+                    filename = secure_filename(resources_file.filename)
+                    resources_file.save(os.path.join(app.config['UPLOAD_FOLDER'], 'modules', 'resources', filename))
+                    module.additional_resources = os.path.join('modules', 'resources', filename)
+            
+            course.modules.append(module)
+        
         db.session.commit()
         
         return jsonify({
@@ -294,23 +348,44 @@ def get_courses():
     courses = Course.query.all()
     courses_data = []
     for course in courses:
+        # Get modules with descriptions
+        modules_data = [{
+            'id': module.id,
+            'name': module.name,
+            'title': module.title,
+            'description': module.description,
+            'order': module.order,
+            'media_file': module.media_file,
+            'additional_resources': module.additional_resources
+        } for module in course.modules.order_by(Module.order)]
+
         course_dict = {
             'id': course.id,
             'title': course.title,
+            'course_name': course.course_name,
             'image': course.image,
             'content': course.content,
             'video': course.video,
             'brief': course.brief,
             'number_of_modules': course.number_of_modules,
-            'course_type': course.course_type,  # New field
+            'course_type': course.course_type,
+            'price': course.price,
+            'status': course.status,
+            'additional_resources': course.additional_resources,
             'date_created': course.date_created.isoformat() if course.date_created else None,
+            'last_updated': course.last_updated.isoformat() if course.last_updated else None,
             'categories': [category.name for category in course.categories],
-            'modules': [module.name for module in course.modules]
+            'modules': modules_data,
+            'student_count': course.student_count
         }
         
         # Handle case where author might be None
         if course.author:
-            course_dict['author'] = course.author.full_name
+            course_dict['author'] = {
+                'id': course.author.id,
+                'full_name': course.author.full_name,
+                'email': course.author.email
+            }
         else:
             course_dict['author'] = 'Unknown'
 
@@ -325,65 +400,169 @@ def get_course(course_id):
     if not course:
         return jsonify({'error': 'Course not found'}), 404
 
-    course_data = {'id': course.id, 'title': course.title, 'image': course.image, 'content': course.content,
-                   'video': course.video, 'author': course.author.full_name, 'date_created': course.date_created,
-                   'categories': [category.name for category in course.categories],
-                   'modules': [module.name for module in course.modules]}
+    # Get detailed module information
+    modules_data = [{
+        'id': module.id,
+        'name': module.name,
+        'title': module.title,
+        'description': module.description,
+        'content': module.content,
+        'order': module.order,
+        'media_file': module.media_file,
+        'additional_resources': module.additional_resources
+    } for module in course.modules.order_by(Module.order)]
+
+    course_data = {
+        'id': course.id,
+        'title': course.title,
+        'course_name': course.course_name,
+        'image': course.image,
+        'content': course.content,
+        'video': course.video,
+        'brief': course.brief,
+        'number_of_modules': course.number_of_modules,
+        'course_type': course.course_type,
+        'price': course.price,
+        'status': course.status,
+        'additional_resources': course.additional_resources,
+        'date_created': course.date_created.isoformat() if course.date_created else None,
+        'last_updated': course.last_updated.isoformat() if course.last_updated else None,
+        'categories': [category.name for category in course.categories],
+        'modules': modules_data,
+        'student_count': course.student_count,
+        'author': {
+            'id': course.author.id,
+            'full_name': course.author.full_name,
+            'email': course.author.email
+        } if course.author else 'Unknown'
+    }
     return jsonify(course_data), 200
 
 # Update a course
 @app.route('/courses/<int:course_id>', methods=['PUT'])
 @jwt_required()
 def update_course(course_id):
-    user_id = get_jwt_identity()
-    
-    course = Course.query.get(course_id)
-    if not course:
-        return jsonify({'error': 'Course not found'}), 404
-    
-    # Check if the current user is the author of the course
-    if course.author_id != user_id:
-        return jsonify({'error': 'Unauthorized to update this course'}), 403
+    try:
+        user_id = get_jwt_identity()
+        
+        course = Course.query.get(course_id)
+        if not course:
+            return jsonify({'error': 'Course not found'}), 404
+        
+        # Check if the current user is the author of the course
+        if course.author_id != user_id:
+            return jsonify({'error': 'Unauthorized to update this course'}), 403
 
-    data = request.get_json()
-    course.title = data.get('title', course.title)
-    course.image = data.get('image', course.image)
-    course.content = data.get('content', course.content)
-    course.video = data.get('video', course.video)
+        # Handle form data and files
+        data = request.form
+        files = request.files
 
-    # Update categories
-    if 'categories' in data:
-        # Remove all existing categories
-        course.categories = []
-        # Add new categories
-        for category_name in data['categories']:
+        # Update basic course information
+        if data.get('course_title'): course.title = data.get('course_title')
+        if data.get('course_name'): course.course_name = data.get('course_name')
+        if data.get('body'): course.content = data.get('body')
+        if data.get('brief'): course.brief = data.get('brief')
+        if data.get('course_type'): course.course_type = data.get('course_type')
+        if data.get('price'): course.price = float(data.get('price'))
+        if data.get('status'): course.status = data.get('status')
+
+        # Handle file uploads
+        if 'image' in files:
+            image_file = files['image']
+            if image_file and allowed_file(image_file.filename):
+                filename = secure_filename(image_file.filename)
+                image_file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+                course.image = filename
+
+        if 'video' in files:
+            video_file = files['video']
+            if video_file and allowed_file(video_file.filename):
+                filename = secure_filename(video_file.filename)
+                video_file.save(os.path.join(app.config['COURSE_VIDEO_UPLOAD_FOLDER'], filename))
+                course.video = os.path.join(app.config['COURSE_VIDEO_UPLOAD_FOLDER'], filename)
+
+        if 'additional_resources' in files:
+            resources_file = files['additional_resources']
+            if resources_file and allowed_file(resources_file.filename):
+                filename = secure_filename(resources_file.filename)
+                resources_file.save(os.path.join(app.config['UPLOAD_FOLDER'], 'resources', filename))
+                course.additional_resources = os.path.join('resources', filename)
+
+        # Update categories if provided
+        if data.get('course_category'):
+            course.categories = []
+            category_name = data.get('course_category')
             category = CourseCategory.query.filter_by(name=category_name).first()
             if not category:
                 category = CourseCategory(name=category_name)
+                db.session.add(category)
             course.categories.append(category)
 
-    # Update modules
-    if 'modules' in data:
-        # Remove all existing modules
-        for module in course.modules:
-            db.session.delete(module)
-        course.modules = []
-        # Add new modules
-        for module_data in data['modules']:
-            module = Module(
-                name=module_data.get('name'),
-                description=module_data.get('description'),
-                content=module_data.get('content'),
-                course_id=course.id,
-                order=module_data.get('order'),
-                additional_resources=module_data.get('additional_resources'),
-                media_file=module_data.get('media_file')
-            )
-            course.modules.append(module)
+        # Update modules if provided
+        if data.get('modules'):
+            modules_data = json.loads(data.get('modules'))
+            
+            # Store existing module IDs to track deletions
+            existing_module_ids = set(module.id for module in course.modules)
+            updated_module_ids = set()
 
-    try:
+            for module_data in modules_data:
+                module_id = module_data.get('id')
+                
+                if module_id:  # Update existing module
+                    module = Module.query.get(module_id)
+                    if module and module.course_id == course.id:
+                        module.name = module_data.get('name', module.name)
+                        module.title = module_data.get('title', module.title)
+                        module.description = module_data.get('description', module.description)
+                        module.content = module_data.get('content', module.content)
+                        module.order = module_data.get('order', module.order)
+                        updated_module_ids.add(module_id)
+                else:  # Create new module
+                    module = Module(
+                        name=module_data.get('name'),
+                        title=module_data.get('title'),
+                        description=module_data.get('description'),
+                        content=module_data.get('content'),
+                        course_id=course.id,
+                        order=module_data.get('order', 1)
+                    )
+                    db.session.add(module)
+                    
+                # Handle module files
+                module_order = module_data.get('order', 1)
+                
+                # Handle module media file
+                module_file_key = f"module_{module_order}_media"
+                if module_file_key in files:
+                    media_file = files[module_file_key]
+                    if media_file and allowed_file(media_file.filename):
+                        filename = secure_filename(media_file.filename)
+                        media_file.save(os.path.join(app.config['UPLOAD_FOLDER'], 'modules', filename))
+                        module.media_file = os.path.join('modules', filename)
+
+                # Handle module resources
+                module_resources_key = f"module_{module_order}_resources"
+                if module_resources_key in files:
+                    resources_file = files[module_resources_key]
+                    if resources_file and allowed_file(resources_file.filename):
+                        filename = secure_filename(resources_file.filename)
+                        resources_file.save(os.path.join(app.config['UPLOAD_FOLDER'], 'modules', 'resources', filename))
+                        module.additional_resources = os.path.join('modules', 'resources', filename)
+
+            # Delete modules that weren't updated
+            modules_to_delete = existing_module_ids - updated_module_ids
+            for module_id in modules_to_delete:
+                module = Module.query.get(module_id)
+                if module:
+                    db.session.delete(module)
+
+            # Update course's number of modules
+            course.number_of_modules = len(modules_data)
+
         db.session.commit()
         return jsonify({'message': 'Course updated successfully'}), 200
+        
     except Exception as e:
         db.session.rollback()
         return jsonify({'error': f'Failed to update course: {str(e)}'}), 500
